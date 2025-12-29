@@ -24,6 +24,10 @@ class SupabaseClient {
   }
 
   private async request(endpoint: string, options: RequestInit = {}) {
+    console.log("[v0] Making request to:", endpoint)
+    console.log("[v0] Has session:", !!this.session)
+    console.log("[v0] Access token exists:", !!this.session?.access_token)
+
     const headers: HeadersInit = {
       apikey: SUPABASE_ANON_KEY,
       "Content-Type": "application/json",
@@ -32,6 +36,9 @@ class SupabaseClient {
 
     if (this.session?.access_token) {
       headers.Authorization = `Bearer ${this.session.access_token}`
+      console.log("[v0] Added Authorization header")
+    } else {
+      console.warn("[v0] No access token available for request")
     }
 
     const response = await fetch(`${SUPABASE_URL}${endpoint}`, {

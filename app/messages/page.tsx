@@ -79,11 +79,20 @@ export default function MessagesPage() {
 
   const checkAuthAndFetchData = async () => {
     const supabase = createClient()
+
+    console.log("[v0] Checking auth state...")
+    console.log("[v0] User from getUser:", user)
+    console.log(
+      "[v0] LocalStorage session:",
+      typeof window !== "undefined" ? localStorage.getItem("supabase_session") : "N/A",
+    )
+
     const { data } = await supabase.auth.getUser()
 
     console.log("[v0] Current user:", data.user?.id)
 
     if (!data.user) {
+      console.warn("[v0] No authenticated user, redirecting to login")
       router.push("/auth/login")
       return
     }
