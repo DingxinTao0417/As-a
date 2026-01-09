@@ -17,6 +17,7 @@ import {
   X,
   DollarSign,
   CheckCircle,
+  Eye,
 } from "lucide-react"
 import { useState, useEffect, useRef } from "react"
 import { createClient } from "@/lib/supabase/client"
@@ -34,7 +35,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { CreateOrderDialog } from "@/components/create-order-dialog"
-import { createCheckoutSession, completeOrder } from "@/app/actions/orders"
+import { createCheckoutSession, completeOrder, confirmOrder } from "@/app/actions/orders"
 import { formatCurrency } from "@/lib/stripe"
 
 type Conversation = {
@@ -92,6 +93,7 @@ export default function MessagesPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [showCreateOrder, setShowCreateOrder] = useState(false)
   const [processingPayment, setProcessingPayment] = useState(false)
+  const [processingConfirmation, setProcessingConfirmation] = useState(false)
 
   useEffect(() => {
     checkAuthAndFetchData()
@@ -166,16 +168,40 @@ export default function MessagesPage() {
   const handlePayment = async (orderId: string) => {
     setProcessingPayment(true)
     try {
+      console.log("[v0] Starting payment process for order:", orderId)
       const result = await createCheckoutSession(orderId)
 
       if (result.error) {
         alert(result.error)
-      } else if (result.url) {
-        window.location.href = result.url
+        return
+      }
+
+      if (result.url) {
+        console.log("[v0] Stripe checkout URL received:", result.url)
+
+        // Try to open in a new tab first (more reliable)
+        const newWindow = window.open(result.url, "_blank")
+
+        // If popup blocker prevented opening, fallback to current window
+        if (!newWindow || newWindow.closed || typeof newWindow.closed === "undefined") {
+          console.log("[v0] Popup blocked, redirecting in current window")
+          // Show a message and redirect after a short delay
+          if (
+            confirm(
+              language === "ar"
+                ? "سيتم توجيهك إلى صفحة الدفع. انقر موافق للمتابعة."
+                : "You will be redirected to the payment page. Click OK to continue.",
+            )
+          ) {
+            window.location.href = result.url
+          }
+        } else {
+          console.log("[v0] Successfully opened Stripe checkout in new tab")
+        }
       }
     } catch (error) {
       console.error("[v0] Payment error:", error)
-      alert("Failed to process payment")
+      alert(language === "ar" ? "فشل في معالجة الدفع" : "Failed to process payment")
     } finally {
       setProcessingPayment(false)
     }
@@ -202,6 +228,37 @@ export default function MessagesPage() {
     } catch (error) {
       console.error("[v0] Complete order error:", error)
       alert("Failed to complete order")
+    }
+  }
+
+  const handleConfirmOrder = async (orderId: string) => {
+    if (
+      !confirm(
+        language === "ar"
+          ? "هل تؤكد استلام الخدمة وإتمام الطلب؟"
+          : "Do you confirm receiving the service and completing the order?",
+      )
+    ) {
+      return
+    }
+
+    setProcessingConfirmation(true)
+    try {
+      const result = await confirmOrder(orderId)
+
+      if (result.error) {
+        alert(result.error)
+      } else {
+        alert(language === "ar" ? "تم تأكيد الطلب بنجاح!" : "Order confirmed successfully!")
+        if (selectedConversation) {
+          await fetchOrders(selectedConversation)
+        }
+      }
+    } catch (error) {
+      console.error("[v0] Confirm order error:", error)
+      alert("Failed to confirm order")
+    } finally {
+      setProcessingConfirmation(false)
     }
   }
 
@@ -720,9 +777,27 @@ export default function MessagesPage() {
                               <span>{t("رسوم المنصة:", "Platform Fee:")}</span>
                               <span>-{formatCurrency(order.platform_fee_cents)}</span>
                             </div>
+                            {order.paid_at && (
+                              <div className="flex justify-between text-xs text-muted-foreground pt-1 border-t">
+                                <span>{t("تاريخ الدفع:", "Paid on:")}</span>
+                                <span>
+                                  {new Date(order.paid_at).toLocaleDateString(language === "ar" ? "ar-SA" : "en-US")}
+                                </span>
+                              </div>
+                            )}
+                            {order.completed_at && (
+                              <div className="flex justify-between text-xs text-muted-foreground">
+                                <span>{t("تاريخ الإنجاز:", "Completed on:")}</span>
+                                <span>
+                                  {new Date(order.completed_at).toLocaleDateString(
+                                    language === "ar" ? "ar-SA" : "en-US",
+                                  )}
+                                </span>
+                              </div>
+                            )}
                           </div>
 
-                          <div className="flex items-center justify-between pt-2">
+                          <div className="flex items-center justify-between gap-2 pt-2">
                             <span
                               className={`text-xs px-2 py-1 rounded-full ${
                                 order.status === "pending"
@@ -731,39 +806,90 @@ export default function MessagesPage() {
                                     ? "bg-blue-100 text-blue-800"
                                     : order.status === "completed"
                                       ? "bg-green-100 text-green-800"
-                                      : "bg-gray-100 text-gray-800"
+                                      : order.status === "awaiting_confirmation"
+                                        ? "bg-purple-100 text-purple-800"
+                                        : order.status === "cancelled"
+                                          ? "bg-red-100 text-red-800"
+                                          : "bg-gray-100 text-gray-800"
                               }`}
                             >
                               {order.status === "pending" && t("قيد الانتظار", "Pending")}
                               {order.status === "paid" && t("مدفوع", "Paid")}
                               {order.status === "completed" && t("مكتمل", "Completed")}
                               {order.status === "cancelled" && t("ملغي", "Cancelled")}
+                              {order.status === "awaiting_confirmation" &&
+                                t("في انتظار التأكيد", "Awaiting Confirmation")}
                             </span>
 
-                            {/* Seeker can pay pending orders */}
-                            {order.status === "pending" && order.seeker_id === user.id && (
-                              <Button
-                                size="sm"
-                                onClick={() => handlePayment(order.id)}
-                                disabled={processingPayment}
-                                className="gap-2"
-                              >
-                                <DollarSign className="h-4 w-4" />
-                                {processingPayment ? t("جاري المعالجة...", "Processing...") : t("ادفع الآن", "Pay Now")}
-                              </Button>
+                            {/* Seeker buttons */}
+                            {order.seeker_id === user.id && (
+                              <div className="flex gap-2">
+                                {order.status === "pending" && (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handlePayment(order.id)}
+                                    disabled={processingPayment}
+                                    className="gap-2"
+                                  >
+                                    <DollarSign className="h-4 w-4" />
+                                    {processingPayment
+                                      ? t("جاري المعالجة...", "Processing...")
+                                      : t("ادفع الآن", "Pay Now")}
+                                  </Button>
+                                )}
+                                {order.status === "awaiting_confirmation" && (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleConfirmOrder(order.id)}
+                                    disabled={processingConfirmation}
+                                    className="gap-2"
+                                  >
+                                    <CheckCircle className="h-4 w-4" />
+                                    {processingConfirmation
+                                      ? t("جاري المعالجة...", "Processing...")
+                                      : t("تأكيد الاستلام", "Confirm Delivery")}
+                                  </Button>
+                                )}
+                                {(order.status === "paid" || order.status === "completed") && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => router.push("/history")}
+                                    className="gap-2"
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                    {t("عرض التفاصيل", "View Details")}
+                                  </Button>
+                                )}
+                              </div>
                             )}
 
-                            {/* Provider can complete paid orders */}
-                            {order.status === "paid" && currentConversation.is_provider && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleCompleteOrder(order.id)}
-                                className="gap-2"
-                              >
-                                <CheckCircle className="h-4 w-4" />
-                                {t("تأكيد الإنجاز", "Mark Complete")}
-                              </Button>
+                            {/* Provider buttons - only show when user is provider */}
+                            {currentConversation?.is_provider && (
+                              <>
+                                {order.status === "paid" && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleCompleteOrder(order.id)}
+                                    className="gap-2"
+                                  >
+                                    <CheckCircle className="h-4 w-4" />
+                                    {t("إكمال الطلب", "Complete Order")}
+                                  </Button>
+                                )}
+                                {(order.status === "awaiting_confirmation" || order.status === "completed") && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => router.push("/dashboard")}
+                                    className="gap-2"
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                    {t("عرض التفاصيل", "View Details")}
+                                  </Button>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>

@@ -113,16 +113,16 @@ export async function createCheckoutSession(orderId: string) {
     const supabase = await createServerClient()
 
     console.log("[v0] Fetching order details...")
-    const ordersResult = await supabase.from("orders").select("*").eq("id", orderId)
+    const { data: orders, error: orderError } = await supabase.from("orders").select("*").eq("id", orderId)
 
-    console.log("[v0] Orders query result:", ordersResult)
+    console.log("[v0] Orders query result:", { orders, orderError })
 
-    if (!ordersResult || ordersResult.length === 0) {
-      console.error("[v0] Order not found")
+    if (orderError || !orders || orders.length === 0) {
+      console.error("[v0] Order not found:", orderError)
       return { error: "Order not found" }
     }
 
-    const order = ordersResult[0]
+    const order = orders[0]
     console.log("[v0] Order found:", {
       id: order.id,
       amount_cents: order.amount_cents,
@@ -131,14 +131,23 @@ export async function createCheckoutSession(orderId: string) {
     })
 
     console.log("[v0] Fetching seeker email...")
-    const seekersResult = await supabase.from("profiles").select("email").eq("id", order.seeker_id)
+    const { data: seekers, error: seekerError } = await supabase
+      .from("profiles")
+      .select("email")
+      .eq("id", order.seeker_id)
 
-    const seekerEmail = seekersResult && seekersResult.length > 0 ? seekersResult[0].email : null
+    const seekerEmail = seekers && seekers.length > 0 ? seekers[0].email : null
     console.log("[v0] Seeker email:", seekerEmail)
 
     console.log("[v0] Initializing Stripe...")
     const stripe = getStripe()
     console.log("[v0] Stripe initialized:", !!stripe)
+
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL?.startsWith("http")
+      ? process.env.NEXT_PUBLIC_SITE_URL
+      : "https://v0-professional-services-platform-ruby.vercel.app"
+
+    console.log("[v0] Base URL:", baseUrl)
 
     const sessionConfig = {
       payment_method_types: ["card"],
@@ -156,8 +165,8 @@ export async function createCheckoutSession(orderId: string) {
         },
       ],
       mode: "payment" as const,
-      success_url: `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/messages?payment=success&order_id=${orderId}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/messages?payment=cancelled`,
+      success_url: `${baseUrl}/messages?payment=success&order_id=${orderId}`,
+      cancel_url: `${baseUrl}/messages?payment=cancelled`,
       metadata: {
         order_id: orderId,
         platform_fee_cents: order.platform_fee_cents.toString(),
@@ -195,11 +204,10 @@ export async function completeOrder(orderId: string) {
 
     const supabase = await createServerClient()
 
-    // Update order status
     const { data: order, error } = await supabase
       .from("orders")
       .update({
-        status: "completed",
+        status: "awaiting_confirmation",
         completed_at: new Date().toISOString(),
       })
       .eq("id", orderId)
@@ -211,6 +219,53 @@ export async function completeOrder(orderId: string) {
       return { error: "Failed to complete order" }
     }
 
+    console.log("[v0] Order marked as awaiting confirmation")
+    return { success: true }
+  } catch (error) {
+    console.error("[v0] Error completing order:", error)
+    return { error: "Failed to complete order" }
+  }
+}
+
+export async function confirmOrder(orderId: string) {
+  try {
+    console.log("[v0] Confirming order completion:", orderId)
+
+    const supabase = await createServerClient()
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      return { error: "You must be logged in" }
+    }
+
+    // Get order details
+    const { data: order, error: orderError } = await supabase.from("orders").select("*").eq("id", orderId).single()
+
+    if (orderError || !order) {
+      return { error: "Order not found" }
+    }
+
+    // Verify the user is the seeker
+    if (order.seeker_id !== user.id) {
+      return { error: "You can only confirm your own orders" }
+    }
+
+    // Update order status to completed
+    const { error: updateError } = await supabase
+      .from("orders")
+      .update({
+        status: "completed",
+      })
+      .eq("id", orderId)
+
+    if (updateError) {
+      console.error("[v0] Error updating order:", updateError)
+      return { error: "Failed to confirm order" }
+    }
+
     // Add to service history
     await supabase.from("service_history").insert({
       seeker_id: order.seeker_id,
@@ -219,14 +274,14 @@ export async function completeOrder(orderId: string) {
       service_name_en: order.service_name_en,
       service_description_ar: order.service_description_ar,
       service_description_en: order.service_description_en,
-      amount: order.provider_amount_cents / 100, // Convert to dollars
+      amount: order.provider_amount_cents / 100,
       status: "completed",
     })
 
-    console.log("[v0] Order completed successfully")
+    console.log("[v0] Order confirmed and added to history")
     return { success: true }
   } catch (error) {
-    console.error("[v0] Error completing order:", error)
-    return { error: "Failed to complete order" }
+    console.error("[v0] Error confirming order:", error)
+    return { error: "Failed to confirm order" }
   }
 }

@@ -45,24 +45,42 @@ export default function HistoryPage() {
 
       setUser(user)
 
-      // Fetch service history
       const { data, error } = await supabase
         .from("service_history")
-        .select("*")
+        .select(`
+          *,
+          provider:provider_id (
+            name_ar,
+            name_en,
+            avatar_url
+          )
+        `)
         .eq("seeker_id", user.id)
         .order("completed_at", { ascending: false })
 
       if (error) {
         console.error("[v0] Error fetching history:", error)
       } else {
-        setHistory(data || [])
+        const formattedHistory = data?.map((item: any) => ({
+          id: item.id,
+          provider_name: language === "ar" ? item.provider?.name_ar : item.provider?.name_en,
+          provider_avatar: item.provider?.avatar_url,
+          service_name_ar: item.service_name_ar,
+          service_name_en: item.service_name_en,
+          service_description_ar: item.service_description_ar,
+          service_description_en: item.service_description_en,
+          amount: item.amount,
+          status: item.status,
+          completed_at: item.completed_at,
+        }))
+        setHistory(formattedHistory || [])
       }
 
       setLoading(false)
     }
 
     loadHistory()
-  }, [router])
+  }, [router, language])
 
   if (loading) {
     return (
