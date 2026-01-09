@@ -26,7 +26,7 @@ export async function createOrder(data: {
     console.log("[v0] Calculated fees:", JSON.stringify(fees, null, 2))
 
     // Create order in database
-    const supabase = createServerClient()
+    const supabase = await createServerClient()
 
     const {
       data: { user },
@@ -107,43 +107,55 @@ export async function createOrder(data: {
 
 export async function createCheckoutSession(orderId: string) {
   try {
-    console.log("[v0] Creating checkout session for order:", orderId)
+    console.log("[v0] ========== CREATING CHECKOUT SESSION ==========")
+    console.log("[v0] Order ID:", orderId)
 
-    const supabase = createServerClient()
+    const supabase = await createServerClient()
 
-    // Get order details
-    const { data: order, error: orderError } = await supabase
-      .from("orders")
-      .select("*, seeker:seeker_id(email), provider:provider_id(name_en, name_ar)")
-      .eq("id", orderId)
-      .single()
+    console.log("[v0] Fetching order details...")
+    const ordersResult = await supabase.from("orders").select("*").eq("id", orderId)
 
-    if (orderError || !order) {
-      console.error("[v0] Order not found:", orderError)
+    console.log("[v0] Orders query result:", ordersResult)
+
+    if (!ordersResult || ordersResult.length === 0) {
+      console.error("[v0] Order not found")
       return { error: "Order not found" }
     }
 
-    console.log("[v0] Order details:", order)
+    const order = ordersResult[0]
+    console.log("[v0] Order found:", {
+      id: order.id,
+      amount_cents: order.amount_cents,
+      service_name: order.service_name_en,
+      status: order.status,
+    })
 
+    console.log("[v0] Fetching seeker email...")
+    const seekersResult = await supabase.from("profiles").select("email").eq("id", order.seeker_id)
+
+    const seekerEmail = seekersResult && seekersResult.length > 0 ? seekersResult[0].email : null
+    console.log("[v0] Seeker email:", seekerEmail)
+
+    console.log("[v0] Initializing Stripe...")
     const stripe = getStripe()
+    console.log("[v0] Stripe initialized:", !!stripe)
 
-    // Create Stripe checkout session
-    const session = await stripe.checkout.sessions.create({
+    const sessionConfig = {
       payment_method_types: ["card"],
       line_items: [
         {
           price_data: {
             currency: order.currency || "usd",
             product_data: {
-              name: order.service_name_en,
-              description: order.service_description_en || `Service by ${order.provider?.name_en || "Provider"}`,
+              name: order.service_name_en || "Service",
+              description: order.service_description_en || "Professional service",
             },
             unit_amount: order.amount_cents,
           },
           quantity: 1,
         },
       ],
-      mode: "payment",
+      mode: "payment" as const,
       success_url: `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/messages?payment=success&order_id=${orderId}`,
       cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/messages?payment=cancelled`,
       metadata: {
@@ -151,17 +163,29 @@ export async function createCheckoutSession(orderId: string) {
         platform_fee_cents: order.platform_fee_cents.toString(),
         provider_amount_cents: order.provider_amount_cents.toString(),
       },
+    }
+
+    console.log("[v0] Creating Stripe checkout session with config:", JSON.stringify(sessionConfig, null, 2))
+
+    const session = await stripe.checkout.sessions.create(sessionConfig)
+
+    console.log("[v0] Checkout session created successfully:", {
+      id: session.id,
+      url: session.url,
     })
 
-    console.log("[v0] Checkout session created:", session.id)
-
-    // Update order with session ID
+    console.log("[v0] Updating order with session ID...")
     await supabase.from("orders").update({ stripe_checkout_session_id: session.id }).eq("id", orderId)
 
+    console.log("[v0] ========== CHECKOUT SESSION CREATED ==========")
     return { url: session.url }
   } catch (error) {
-    console.error("[v0] Error creating checkout session:", error)
-    return { error: "Failed to create checkout session" }
+    console.error("[v0] ========== CHECKOUT SESSION ERROR ==========")
+    console.error("[v0] Error type:", error?.constructor?.name)
+    console.error("[v0] Error message:", error instanceof Error ? error.message : String(error))
+    console.error("[v0] Error stack:", error instanceof Error ? error.stack : "No stack trace")
+    console.error("[v0] Full error:", JSON.stringify(error, Object.getOwnPropertyNames(error), 2))
+    return { error: `Failed to create checkout session: ${error instanceof Error ? error.message : "Unknown error"}` }
   }
 }
 
@@ -169,7 +193,7 @@ export async function completeOrder(orderId: string) {
   try {
     console.log("[v0] Completing order:", orderId)
 
-    const supabase = createServerClient()
+    const supabase = await createServerClient()
 
     // Update order status
     const { data: order, error } = await supabase
