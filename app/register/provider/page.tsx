@@ -125,6 +125,22 @@ export default function BecomeProviderPage() {
       return
     }
 
+    if (formData.starting_price) {
+      const price = Number.parseFloat(formData.starting_price)
+      if (price > 99999999) {
+        console.log("[v0] Validation failed: Price too high")
+        toast({
+          title: t("خطأ", "Error"),
+          description: t(
+            "السعر الابتدائي لا يمكن أن يتجاوز 99,999,999 ريال",
+            "Starting price cannot exceed 99,999,999 SAR",
+          ),
+          variant: "destructive",
+        })
+        return
+      }
+    }
+
     if (selectedCategories.length === 0) {
       console.log("[v0] Validation failed: No categories selected")
       toast({
@@ -319,10 +335,15 @@ export default function BecomeProviderPage() {
                     id="starting_price"
                     type="number"
                     min="0"
+                    max="99999999"
+                    step="0.01"
                     value={formData.starting_price}
                     onChange={(e) => setFormData({ ...formData, starting_price: e.target.value })}
                     placeholder="500"
                   />
+                  <p className="text-sm text-muted-foreground">
+                    {t("الحد الأقصى: 99,999,999 ريال", "Maximum: 99,999,999 SAR")}
+                  </p>
                 </div>
 
                 <div className="flex justify-end">

@@ -6,7 +6,18 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useLanguage } from "@/components/language-provider"
-import { MessageCircle, Send, Search, ArrowLeft, MoreVertical, Pin, Trash2, X } from "lucide-react"
+import {
+  MessageCircle,
+  Send,
+  Search,
+  ArrowLeft,
+  MoreVertical,
+  Pin,
+  Trash2,
+  X,
+  DollarSign,
+  CheckCircle,
+} from "lucide-react"
 import { useState, useEffect, useRef } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useRouter, useSearchParams } from "next/navigation"
@@ -22,6 +33,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { CreateOrderDialog } from "@/components/create-order-dialog"
+import { createCheckoutSession, completeOrder } from "@/app/actions/orders"
+import { formatCurrency } from "@/lib/stripe"
 
 type Conversation = {
   id: string
@@ -44,11 +58,30 @@ type Message = {
   is_read: boolean
 }
 
+type Order = {
+  id: string
+  conversation_id: string
+  seeker_id: string
+  provider_id: string
+  service_name_ar: string
+  service_name_en: string
+  service_description_ar?: string
+  service_description_en?: string
+  amount_cents: number
+  platform_fee_cents: number
+  provider_amount_cents: number
+  status: string
+  created_at: string
+  paid_at?: string
+  completed_at?: string
+}
+
 export default function MessagesPage() {
   const { t, language } = useLanguage()
   const router = useRouter()
   const searchParams = useSearchParams()
   const [user, setUser] = useState<any>(null)
+  const [userProfile, setUserProfile] = useState<any>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -56,6 +89,9 @@ export default function MessagesPage() {
   const [isLoading, setIsLoading] = useState(true)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const [showClearDialog, setShowClearDialog] = useState(false)
+  const [orders, setOrders] = useState<Order[]>([])
+  const [showCreateOrder, setShowCreateOrder] = useState(false)
+  const [processingPayment, setProcessingPayment] = useState(false)
 
   useEffect(() => {
     checkAuthAndFetchData()
@@ -71,8 +107,12 @@ export default function MessagesPage() {
   useEffect(() => {
     if (selectedConversation) {
       fetchMessages(selectedConversation)
+      fetchOrders(selectedConversation)
 
-      const interval = setInterval(() => fetchMessages(selectedConversation), 3000)
+      const interval = setInterval(() => {
+        fetchMessages(selectedConversation)
+        fetchOrders(selectedConversation)
+      }, 3000)
       return () => clearInterval(interval)
     }
   }, [selectedConversation])
@@ -80,16 +120,9 @@ export default function MessagesPage() {
   const checkAuthAndFetchData = async () => {
     const supabase = createClient()
 
-    console.log("[v0] Checking auth state...")
-    console.log("[v0] User from getUser:", user)
-    console.log(
-      "[v0] LocalStorage session:",
-      typeof window !== "undefined" ? localStorage.getItem("supabase_session") : "N/A",
-    )
+    console.log("[v0] ========== AUTH CHECK START ==========")
 
     const { data } = await supabase.auth.getUser()
-
-    console.log("[v0] Current user:", data.user?.id)
 
     if (!data.user) {
       console.warn("[v0] No authenticated user, redirecting to login")
@@ -98,15 +131,86 @@ export default function MessagesPage() {
     }
 
     setUser(data.user)
+
+    const { data: profile } = await supabase.from("profiles").select("*").eq("id", data.user.id).single()
+
+    setUserProfile(profile)
+    console.log("[v0] User profile:", profile)
+
     await fetchConversations(data.user.id)
     setIsLoading(false)
+    console.log("[v0] ========== AUTH CHECK END ==========")
+  }
+
+  const fetchOrders = async (conversationId: string) => {
+    const supabase = createClient()
+
+    try {
+      const { data, error } = await supabase
+        .from("orders")
+        .select("*")
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: true })
+
+      if (error) {
+        console.error("[v0] Error fetching orders:", error)
+        return
+      }
+
+      setOrders(data || [])
+    } catch (error) {
+      console.error("[v0] Error fetching orders:", error)
+    }
+  }
+
+  const handlePayment = async (orderId: string) => {
+    setProcessingPayment(true)
+    try {
+      const result = await createCheckoutSession(orderId)
+
+      if (result.error) {
+        alert(result.error)
+      } else if (result.url) {
+        window.location.href = result.url
+      }
+    } catch (error) {
+      console.error("[v0] Payment error:", error)
+      alert("Failed to process payment")
+    } finally {
+      setProcessingPayment(false)
+    }
+  }
+
+  const handleCompleteOrder = async (orderId: string) => {
+    if (
+      !confirm(language === "ar" ? "هل أنت متأكد من إكمال هذا الطلب؟" : "Are you sure you want to complete this order?")
+    ) {
+      return
+    }
+
+    try {
+      const result = await completeOrder(orderId)
+
+      if (result.error) {
+        alert(result.error)
+      } else {
+        alert(language === "ar" ? "تم إكمال الطلب بنجاح!" : "Order completed successfully!")
+        if (selectedConversation) {
+          await fetchOrders(selectedConversation)
+        }
+      }
+    } catch (error) {
+      console.error("[v0] Complete order error:", error)
+      alert("Failed to complete order")
+    }
   }
 
   const fetchConversations = async (userId: string) => {
     const supabase = createClient()
 
     try {
-      console.log("[v0] Fetching conversations for user:", userId)
+      console.log("[v0] ========== FETCHING CONVERSATIONS ==========")
+      console.log("[v0] Fetching conversations for user ID:", userId)
 
       const { data: seekerConvs, error: seekerError } = await supabase
         .from("conversations")
@@ -114,11 +218,20 @@ export default function MessagesPage() {
         .eq("seeker_id", userId)
         .eq("is_archived_by_seeker", false)
 
-      console.log("[v0] Seeker conversations:", seekerConvs)
+      console.log("[v0] User is SEEKER in conversations:", seekerConvs?.length || 0)
+      if (seekerConvs && seekerConvs.length > 0) {
+        console.log(
+          "[v0] Seeker conversation IDs:",
+          seekerConvs.map((c: any) => c.id),
+        )
+      }
 
       const { data: providerProfile } = await supabase.from("providers").select("id").eq("user_id", userId).single()
 
-      console.log("[v0] Provider profile:", providerProfile)
+      console.log("[v0] Provider profile exists:", !!providerProfile)
+      if (providerProfile) {
+        console.log("[v0] Provider profile ID:", providerProfile.id)
+      }
 
       let providerConvs: any[] = []
       if (providerProfile) {
@@ -128,14 +241,22 @@ export default function MessagesPage() {
           .eq("provider_id", providerProfile.id)
           .eq("is_archived_by_provider", false)
 
-        console.log("[v0] Provider conversations:", pConvs)
+        console.log("[v0] User is PROVIDER in conversations:", pConvs?.length || 0)
+        if (pConvs && pConvs.length > 0) {
+          console.log(
+            "[v0] Provider conversation IDs:",
+            pConvs.map((c: any) => c.id),
+          )
+        }
         providerConvs = pConvs || []
       }
 
       const allConvs = [...(seekerConvs || []), ...providerConvs]
-      console.log("[v0] Total conversations:", allConvs.length)
+      console.log("[v0] TOTAL conversations found:", allConvs.length)
 
       if (allConvs.length === 0) {
+        console.log("[v0] No conversations found for this user")
+        console.log("[v0] ========== END FETCHING CONVERSATIONS ==========")
         setConversations([])
         return
       }
@@ -188,13 +309,15 @@ export default function MessagesPage() {
         }
       })
 
+      console.log("[v0] Final formatted conversations:", formattedConversations.length)
+      console.log("[v0] ========== END FETCHING CONVERSATIONS ==========")
+
       const sortedConversations = formattedConversations.sort((a, b) => {
         if (a.is_pinned && !b.is_pinned) return -1
         if (!a.is_pinned && b.is_pinned) return 1
         return new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()
       })
 
-      console.log("[v0] Formatted conversations:", sortedConversations)
       setConversations(sortedConversations || [])
     } catch (error) {
       console.error("[v0] Error fetching conversations:", error)
@@ -244,7 +367,11 @@ export default function MessagesPage() {
     const supabase = createClient()
 
     try {
-      const { data, error } = await supabase
+      console.log("[v0] ========== FETCHING MESSAGES ==========")
+      console.log("[v0] Conversation ID:", conversationId)
+      console.log("[v0] Current user ID:", user?.id)
+
+      const { data: result, error } = await supabase
         .from("messages")
         .select("*")
         .eq("conversation_id", conversationId)
@@ -255,14 +382,24 @@ export default function MessagesPage() {
         return
       }
 
-      setMessages(data || [])
+      console.log("[v0] Fetched messages count:", result?.length || 0)
 
-      const unreadMessages = data?.filter((m: any) => !m.is_read && m.sender_id !== user.id)
+      setMessages(result || [])
+
+      const unreadMessages = result?.filter((m: any) => !m.is_read && m.sender_id !== user.id)
       if (unreadMessages && unreadMessages.length > 0) {
+        console.log("[v0] Marking", unreadMessages.length, "messages as read")
         for (const message of unreadMessages) {
           await supabase.from("messages").update({ is_read: true }).eq("id", message.id)
         }
       }
+
+      if (result && result.length > 0) {
+        console.log("[v0] Message sender IDs:", [...new Set(result.map((m: any) => m.sender_id))])
+        console.log("[v0] Messages from current user:", result.filter((m: any) => m.sender_id === user?.id).length)
+        console.log("[v0] Messages from other user:", result.filter((m: any) => m.sender_id !== user?.id).length)
+      }
+      console.log("[v0] ========== END FETCHING MESSAGES ==========")
     } catch (error) {
       console.error("[v0] Error fetching messages:", error)
     }
@@ -463,6 +600,13 @@ export default function MessagesPage() {
                     <p className="text-xs text-muted-foreground">{t("متصل", "Online")}</p>
                   </div>
 
+                  {currentConversation.is_provider && (
+                    <Button variant="outline" size="sm" onClick={() => setShowCreateOrder(true)} className="gap-2">
+                      <DollarSign className="h-4 w-4" />
+                      {t("إنشاء عرض سعر", "Create Quote")}
+                    </Button>
+                  )}
+
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="sm">
@@ -490,6 +634,30 @@ export default function MessagesPage() {
                 </div>
 
                 <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+                  {messages.length === 0 && orders.length === 0 && (
+                    <div className="flex items-center justify-center h-full">
+                      <div className="text-center max-w-md p-6 bg-muted/30 rounded-lg">
+                        <MessageCircle className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+                        <h3 className="font-semibold mb-2">
+                          {currentConversation.is_provider
+                            ? t("ابدأ المحادثة أو قدم عرض سعر", "Start chatting or create a quote")
+                            : t("ابدأ المحادثة", "Start the conversation")}
+                        </h3>
+                        <p className="text-sm text-muted-foreground">
+                          {currentConversation.is_provider
+                            ? t(
+                                "بعد مناقشة التفاصيل، يمكنك إنشاء عرض سعر للخدمة",
+                                "After discussing details, you can create a quote for the service",
+                              )
+                            : t(
+                                "ناقش احتياجاتك مع مقدم الخدمة وستحصل على عرض سعر",
+                                "Discuss your needs with the provider and you'll receive a quote",
+                              )}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {messages.map((message) => (
                     <div
                       key={message.id}
@@ -510,6 +678,86 @@ export default function MessagesPage() {
                       </div>
                     </div>
                   ))}
+
+                  {orders.map((order) => (
+                    <div key={order.id} className="flex justify-center">
+                      <Card className="max-w-md w-full p-4 bg-card border-2">
+                        <div className="space-y-3">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <h3 className="font-bold text-lg">
+                                {language === "ar" ? order.service_name_ar : order.service_name_en}
+                              </h3>
+                              {(language === "ar" ? order.service_description_ar : order.service_description_en) && (
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  {language === "ar" ? order.service_description_ar : order.service_description_en}
+                                </p>
+                              )}
+                            </div>
+                            {order.status === "completed" && (
+                              <CheckCircle className="h-5 w-5 text-green-500 shrink-0 ml-2" />
+                            )}
+                          </div>
+
+                          <div className="bg-muted/50 rounded-lg p-3 space-y-1 text-sm">
+                            <div className="flex justify-between">
+                              <span>{t("المبلغ:", "Amount:")}</span>
+                              <span className="font-bold">{formatCurrency(order.amount_cents)}</span>
+                            </div>
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                              <span>{t("رسوم المنصة:", "Platform Fee:")}</span>
+                              <span>-{formatCurrency(order.platform_fee_cents)}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between pt-2">
+                            <span
+                              className={`text-xs px-2 py-1 rounded-full ${
+                                order.status === "pending"
+                                  ? "bg-yellow-100 text-yellow-800"
+                                  : order.status === "paid"
+                                    ? "bg-blue-100 text-blue-800"
+                                    : order.status === "completed"
+                                      ? "bg-green-100 text-green-800"
+                                      : "bg-gray-100 text-gray-800"
+                              }`}
+                            >
+                              {order.status === "pending" && t("قيد الانتظار", "Pending")}
+                              {order.status === "paid" && t("مدفوع", "Paid")}
+                              {order.status === "completed" && t("مكتمل", "Completed")}
+                              {order.status === "cancelled" && t("ملغي", "Cancelled")}
+                            </span>
+
+                            {/* Seeker can pay pending orders */}
+                            {order.status === "pending" && order.seeker_id === user.id && (
+                              <Button
+                                size="sm"
+                                onClick={() => handlePayment(order.id)}
+                                disabled={processingPayment}
+                                className="gap-2"
+                              >
+                                <DollarSign className="h-4 w-4" />
+                                {processingPayment ? t("جاري المعالجة...", "Processing...") : t("ادفع الآن", "Pay Now")}
+                              </Button>
+                            )}
+
+                            {/* Provider can complete paid orders */}
+                            {order.status === "paid" && currentConversation.is_provider && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleCompleteOrder(order.id)}
+                                className="gap-2"
+                              >
+                                <CheckCircle className="h-4 w-4" />
+                                {t("تأكيد الإنجاز", "Mark Complete")}
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </Card>
+                    </div>
+                  ))}
                 </div>
 
                 <div className="p-4 border-t">
@@ -521,7 +769,7 @@ export default function MessagesPage() {
                       placeholder={t("اكتب رسالة...", "Type a message...")}
                       className="flex-1"
                     />
-                    <Button onClick={sendMessage} size="icon" className="shrink-0">
+                    <Button onClick={sendMessage} disabled={!newMessage.trim()}>
                       <Send className="h-4 w-4" />
                     </Button>
                   </div>
@@ -542,14 +790,30 @@ export default function MessagesPage() {
         </div>
       </main>
 
+      <Footer />
+
+      {showCreateOrder && selectedConversation && currentConversation && (
+        <CreateOrderDialog
+          conversationId={selectedConversation}
+          seekerId={currentConversation.seeker_id}
+          providerId={currentConversation.provider_id}
+          onClose={() => setShowCreateOrder(false)}
+          onSuccess={() => {
+            if (selectedConversation) {
+              fetchOrders(selectedConversation)
+            }
+          }}
+        />
+      )}
+
       <AlertDialog open={showClearDialog} onOpenChange={setShowClearDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("مسح المحادثة", "Clear Chat")}</AlertDialogTitle>
             <AlertDialogDescription>
               {t(
-                "هل أنت متأكد من مسح جميع الرسائل في هذه المحادثة؟ لا يمكن التراجع عن هذا الإجراء.",
-                "Are you sure you want to clear all messages in this conversation? This action cannot be undone.",
+                "هل أنت متأكد من حذف جميع الرسائل؟ هذا الإجراء لا يمكن التراجع عنه.",
+                "Are you sure you want to delete all messages? This action cannot be undone.",
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -561,8 +825,6 @@ export default function MessagesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      <Footer />
     </div>
   )
 }

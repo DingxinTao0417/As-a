@@ -64,7 +64,7 @@ export default function ProfilePage() {
         location: "",
         bio: "",
         avatar_url: "",
-        user_type: "seeker",
+        user_type: user.user_metadata?.role || "seeker",
       })
       setLoading(false)
     }
@@ -125,7 +125,11 @@ export default function ProfilePage() {
                 <div className="flex-1 text-center md:text-right">
                   <h1 className="text-2xl font-bold mb-1">{profile.full_name || profile.email}</h1>
                   <p className="text-muted-foreground mb-2">{profile.email}</p>
-                  <Badge variant="secondary">{t("باحث عن خدمات", "Service Seeker")}</Badge>
+                  <Badge variant="secondary">
+                    {profile.user_type === "provider"
+                      ? t("مقدم خدمات", "Service Provider")
+                      : t("باحث عن خدمات", "Service Seeker")}
+                  </Badge>
                 </div>
               </div>
             </CardContent>

@@ -1,22 +1,25 @@
 "use client"
 
+import { Label } from "@/components/ui/label"
+
 import type React from "react"
 
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { useLanguage } from "@/components/language-provider"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 
 export default function SignupPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [fullName, setFullName] = useState("")
   const [repeatPassword, setRepeatPassword] = useState("")
+  const [role, setRole] = useState<"seeker" | "provider">("seeker")
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
@@ -32,6 +35,11 @@ export default function SignupPage() {
       emailPlaceholder: "example@email.com",
       password: "كلمة المرور",
       repeatPassword: "تأكيد كلمة المرور",
+      role: "أريد التسجيل كـ",
+      seeker: "باحث عن خدمات",
+      seekerDesc: "أبحث عن محترفين لتنفيذ مشاريعي",
+      provider: "مقدم خدمات",
+      providerDesc: "أقدم خدماتي المهنية للآخرين",
       signupButton: "إنشاء حساب",
       creatingAccount: "جاري إنشاء الحساب...",
       haveAccount: "لديك حساب بالفعل؟",
@@ -48,6 +56,11 @@ export default function SignupPage() {
       emailPlaceholder: "example@email.com",
       password: "Password",
       repeatPassword: "Repeat Password",
+      role: "I want to register as",
+      seeker: "Service Seeker",
+      seekerDesc: "Looking for professionals to complete my projects",
+      provider: "Service Provider",
+      providerDesc: "Offering my professional services to others",
       signupButton: "Sign up",
       creatingAccount: "Creating account...",
       haveAccount: "Already have an account?",
@@ -81,6 +94,7 @@ export default function SignupPage() {
           emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}`,
           data: {
             full_name: fullName,
+            role: role,
           },
         },
       })
@@ -153,6 +167,37 @@ export default function SignupPage() {
                     onChange={(e) => setRepeatPassword(e.target.value)}
                   />
                 </div>
+
+                <div className="grid gap-3">
+                  <Label>{t.role}</Label>
+                  <RadioGroup value={role} onValueChange={(value) => setRole(value as "seeker" | "provider")}>
+                    <div className="flex items-start space-x-3 space-x-reverse">
+                      <RadioGroupItem value="seeker" id="seeker" />
+                      <div className="grid gap-1.5 leading-none">
+                        <label
+                          htmlFor="seeker"
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                        >
+                          {t.seeker}
+                        </label>
+                        <p className="text-sm text-muted-foreground">{t.seekerDesc}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start space-x-3 space-x-reverse">
+                      <RadioGroupItem value="provider" id="provider" />
+                      <div className="grid gap-1.5 leading-none">
+                        <label
+                          htmlFor="provider"
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                        >
+                          {t.provider}
+                        </label>
+                        <p className="text-sm text-muted-foreground">{t.providerDesc}</p>
+                      </div>
+                    </div>
+                  </RadioGroup>
+                </div>
+
                 {error && <p className="text-sm text-red-500">{error}</p>}
                 <Button type="submit" className="w-full" disabled={isLoading}>
                   {isLoading ? t.creatingAccount : t.signupButton}

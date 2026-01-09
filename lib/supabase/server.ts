@@ -77,3 +77,7 @@ class SupabaseServerClient {
 export async function createClient() {
   return new SupabaseServerClient()
 }
+
+export async function createServerClient() {
+  return new SupabaseServerClient()
+}

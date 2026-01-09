@@ -5,7 +5,20 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useLanguage } from "@/components/language-provider"
-import { Search, Menu, X, ChevronDown, Globe, User, LogOut, MessageCircle } from "lucide-react"
+import {
+  Search,
+  Menu,
+  X,
+  ChevronDown,
+  Globe,
+  User,
+  LogOut,
+  MessageCircle,
+  LayoutDashboard,
+  Heart,
+  History,
+  Briefcase,
+} from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,21 +34,28 @@ export function Header() {
   const { language, setLanguage, t } = useLanguage()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [user, setUser] = useState<SupabaseUser | null>(null)
+  const [userRole, setUserRole] = useState<"seeker" | "provider" | null>(null)
   const router = useRouter()
 
   useEffect(() => {
     const supabase = createClient()
 
-    // Get initial session
     supabase.auth.getUser().then(({ data: { user } }) => {
       setUser(user)
+      if (user) {
+        setUserRole(user.user_metadata?.role || "seeker")
+      }
     })
 
-    // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
+      if (session?.user) {
+        setUserRole(session.user.user_metadata?.role || "seeker")
+      } else {
+        setUserRole(null)
+      }
     })
 
     return () => subscription.unsubscribe()
@@ -112,14 +132,42 @@ export function Header() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem asChild>
-                    <Link href="/dashboard">{t("لوحة التحكم", "Dashboard")}</Link>
+                    <Link href="/profile" className="flex items-center gap-2">
+                      <User className="h-4 w-4" />
+                      {t("الملف الشخصي", "Profile")}
+                    </Link>
                   </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/profile">{t("الملف الشخصي", "Profile")}</Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/register/provider">{t("خدماتي", "My Services")}</Link>
-                  </DropdownMenuItem>
+                  {userRole === "provider" ? (
+                    <>
+                      <DropdownMenuItem asChild>
+                        <Link href="/dashboard" className="flex items-center gap-2">
+                          <LayoutDashboard className="h-4 w-4" />
+                          {t("لوحة التحكم", "Dashboard")}
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link href="/register/provider" className="flex items-center gap-2">
+                          <Briefcase className="h-4 w-4" />
+                          {t("خدماتي", "My Services")}
+                        </Link>
+                      </DropdownMenuItem>
+                    </>
+                  ) : (
+                    <>
+                      <DropdownMenuItem asChild>
+                        <Link href="/history" className="flex items-center gap-2">
+                          <History className="h-4 w-4" />
+                          {t("سجل الخدمات", "History")}
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link href="/favorites" className="flex items-center gap-2">
+                          <Heart className="h-4 w-4" />
+                          {t("المفضلة", "Favorites")}
+                        </Link>
+                      </DropdownMenuItem>
+                    </>
+                  )}
                   <DropdownMenuItem asChild>
                     <Link href="/messages" className="flex items-center gap-2">
                       <MessageCircle className="h-4 w-4" />
@@ -163,15 +211,31 @@ export function Header() {
               </Link>
               {user && (
                 <>
-                  <Link href="/dashboard" className="text-sm font-medium hover:text-primary transition-colors">
-                    {t("لوحة التحكم", "Dashboard")}
-                  </Link>
                   <Link href="/profile" className="text-sm font-medium hover:text-primary transition-colors">
                     {t("الملف الشخصي", "Profile")}
                   </Link>
-                  <Link href="/register/provider" className="text-sm font-medium hover:text-primary transition-colors">
-                    {t("خدماتي", "My Services")}
-                  </Link>
+                  {userRole === "provider" ? (
+                    <>
+                      <Link href="/dashboard" className="text-sm font-medium hover:text-primary transition-colors">
+                        {t("لوحة التحكم", "Dashboard")}
+                      </Link>
+                      <Link
+                        href="/register/provider"
+                        className="text-sm font-medium hover:text-primary transition-colors"
+                      >
+                        {t("خدماتي", "My Services")}
+                      </Link>
+                    </>
+                  ) : (
+                    <>
+                      <Link href="/history" className="text-sm font-medium hover:text-primary transition-colors">
+                        {t("سجل الخدمات", "History")}
+                      </Link>
+                      <Link href="/favorites" className="text-sm font-medium hover:text-primary transition-colors">
+                        {t("المفضلة", "Favorites")}
+                      </Link>
+                    </>
+                  )}
                   <Link
                     href="/messages"
                     className="text-sm font-medium hover:text-primary transition-colors flex items-center gap-2"
