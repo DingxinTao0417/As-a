@@ -601,7 +601,19 @@ export default function MessagesPage() {
                   </div>
 
                   {currentConversation.is_provider && (
-                    <Button variant="outline" size="sm" onClick={() => setShowCreateOrder(true)} className="gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        console.log("[v0] ========== CREATE ORDER BUTTON CLICKED ==========")
+                        console.log("[v0] Current conversation:", currentConversation)
+                        console.log("[v0] Provider ID:", currentConversation.provider_id)
+                        console.log("[v0] Seeker ID:", currentConversation.seeker_id)
+                        console.log("[v0] Opening create order dialog...")
+                        setShowCreateOrder(true)
+                      }}
+                      className="gap-2"
+                    >
                       <DollarSign className="h-4 w-4" />
                       {t("إنشاء عرض سعر", "Create Quote")}
                     </Button>
@@ -793,17 +805,30 @@ export default function MessagesPage() {
       <Footer />
 
       {showCreateOrder && selectedConversation && currentConversation && (
-        <CreateOrderDialog
-          conversationId={selectedConversation}
-          seekerId={currentConversation.seeker_id}
-          providerId={currentConversation.provider_id}
-          onClose={() => setShowCreateOrder(false)}
-          onSuccess={() => {
-            if (selectedConversation) {
-              fetchOrders(selectedConversation)
-            }
-          }}
-        />
+        <>
+          {console.log("[v0] ========== RENDERING CREATE ORDER DIALOG ==========")}
+          {console.log("[v0] showCreateOrder:", showCreateOrder)}
+          {console.log("[v0] selectedConversation:", selectedConversation)}
+          {console.log("[v0] currentConversation:", currentConversation)}
+          {console.log("[v0] Dialog props - conversationId:", selectedConversation)}
+          {console.log("[v0] Dialog props - seekerId:", currentConversation.seeker_id)}
+          {console.log("[v0] Dialog props - providerId:", currentConversation.provider_id)}
+          <CreateOrderDialog
+            conversationId={selectedConversation}
+            seekerId={currentConversation.seeker_id}
+            providerId={currentConversation.provider_id}
+            onClose={() => {
+              console.log("[v0] Closing create order dialog")
+              setShowCreateOrder(false)
+            }}
+            onSuccess={() => {
+              console.log("[v0] Order created successfully!")
+              if (selectedConversation) {
+                fetchOrders(selectedConversation)
+              }
+            }}
+          />
+        </>
       )}
 
       <AlertDialog open={showClearDialog} onOpenChange={setShowClearDialog}>

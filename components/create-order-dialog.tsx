@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useLanguage } from "./language-provider"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
@@ -38,16 +38,51 @@ export function CreateOrderDialog({
     amount: "",
   })
 
+  useEffect(() => {
+    console.log("[v0] CreateOrderDialog mounted with props:", {
+      conversationId,
+      seekerId,
+      providerId,
+    })
+  }, [conversationId, seekerId, providerId])
+
   const amountCents = Math.round(Number.parseFloat(formData.amount || "0") * 100)
   const platformFeeCents = Math.round(amountCents * PLATFORM_FEE_PERCENTAGE)
   const providerAmountCents = amountCents - platformFeeCents
 
+  const isValidAmount = amountCents >= 100 // Minimum $1.00
+  const canSubmit = isValidAmount && formData.serviceNameAr && formData.serviceNameEn && !loading
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
+
+    console.log("[v0] ========== ORDER CREATION STARTED ==========")
+    console.log("[v0] Form submit triggered")
+    console.log("[v0] Form data:", formData)
+    console.log("[v0] Amount validation:", { amountCents, isValidAmount, canSubmit })
+    console.log("[v0] IDs:", { conversationId, seekerId, providerId })
+
+    if (!isValidAmount) {
+      setError(language === "ar" ? "الحد الأدنى للمبلغ هو $1.00" : "Minimum amount is $1.00")
+      return
+    }
+
+    if (!formData.serviceNameAr || !formData.serviceNameEn) {
+      setError(language === "ar" ? "يرجى ملء اسم الخدمة بكلا اللغتين" : "Please fill in service name in both languages")
+      return
+    }
+
     setLoading(true)
 
     try {
+      console.log("[v0] Submitting order with data:", {
+        conversationId,
+        seekerId,
+        providerId,
+        amountCents,
+      })
+
       const result = await createOrder({
         conversationId,
         seekerId,
@@ -59,17 +94,32 @@ export function CreateOrderDialog({
         amountCents,
       })
 
+      console.log("[v0] Order creation result:", result)
+
       if (result.error) {
+        console.error("[v0] Order creation failed:", result.error)
         setError(result.error)
       } else {
+        console.log("[v0] Order created successfully")
         onSuccess()
         onClose()
       }
     } catch (err) {
-      setError("Failed to create quote")
+      console.error("[v0] Unexpected error:", err)
+      setError(`Failed to create quote: ${err instanceof Error ? err.message : "Unknown error"}`)
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleCloseClick = () => {
+    console.log("[v0] Close button clicked")
+    onClose()
+  }
+
+  const handleCancelClick = () => {
+    console.log("[v0] Cancel button clicked")
+    onClose()
   }
 
   return (
@@ -78,7 +128,7 @@ export function CreateOrderDialog({
         <div className="p-6">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold">{language === "ar" ? "إنشاء عرض سعر" : "Create Quote"}</h2>
-            <Button variant="ghost" size="icon" onClick={onClose}>
+            <Button variant="ghost" size="icon" onClick={handleCloseClick}>
               <X className="h-5 w-5" />
             </Button>
           </div>
@@ -149,6 +199,11 @@ export function CreateOrderDialog({
                   className="pl-10"
                 />
               </div>
+              {!isValidAmount && formData.amount && (
+                <p className="text-sm text-destructive mt-1">
+                  {language === "ar" ? "الحد الأدنى: $1.00" : "Minimum: $1.00"}
+                </p>
+              )}
             </div>
 
             {amountCents > 0 && (
@@ -175,10 +230,15 @@ export function CreateOrderDialog({
             {error && <div className="bg-destructive/10 text-destructive p-3 rounded-lg text-sm">{error}</div>}
 
             <div className="flex gap-3 pt-4">
-              <Button type="button" variant="outline" onClick={onClose} className="flex-1 bg-transparent">
+              <Button type="button" variant="outline" onClick={handleCancelClick} className="flex-1 bg-transparent">
                 {language === "ar" ? "إلغاء" : "Cancel"}
               </Button>
-              <Button type="submit" disabled={loading || amountCents < 100} className="flex-1">
+              <Button
+                type="submit"
+                disabled={!canSubmit}
+                className="flex-1"
+                onClick={() => console.log("[v0] Submit button clicked, canSubmit:", canSubmit)}
+              >
                 {loading
                   ? language === "ar"
                     ? "جاري الإنشاء..."

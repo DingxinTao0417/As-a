@@ -13,48 +13,95 @@ export async function createOrder(data: {
   amountCents: number
 }) {
   try {
-    console.log("[v0] Creating order:", data)
+    console.log("[v0] Creating order with data:", JSON.stringify(data, null, 2))
 
     // Validate amount
     if (data.amountCents < 100) {
+      console.log("[v0] Amount too low:", data.amountCents)
       return { error: "Amount must be at least $1.00" }
     }
 
     // Calculate fees
     const fees = calculateFees(data.amountCents)
-    console.log("[v0] Calculated fees:", fees)
+    console.log("[v0] Calculated fees:", JSON.stringify(fees, null, 2))
 
     // Create order in database
     const supabase = createServerClient()
 
-    const { data: order, error } = await supabase
-      .from("orders")
-      .insert({
-        conversation_id: data.conversationId,
-        seeker_id: data.seekerId,
-        provider_id: data.providerId,
-        service_name_ar: data.serviceNameAr,
-        service_name_en: data.serviceNameEn,
-        service_description_ar: data.serviceDescriptionAr,
-        service_description_en: data.serviceDescriptionEn,
-        amount_cents: fees.amountCents,
-        platform_fee_cents: fees.platformFeeCents,
-        provider_amount_cents: fees.providerAmountCents,
-        status: "pending",
-      })
-      .select()
-      .single()
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
+    console.log("[v0] Current user:", user?.id)
 
-    if (error) {
-      console.error("[v0] Database error:", error)
-      return { error: "Failed to create order" }
+    if (userError || !user) {
+      console.error("[v0] User not authenticated:", userError)
+      return { error: "You must be logged in to create an order" }
     }
 
-    console.log("[v0] Order created:", order)
+    console.log("[v0] Verifying provider ownership...")
+    const { data: providerCheck, error: providerError } = await supabase
+      .from("providers")
+      .select("id, user_id")
+      .eq("id", data.providerId)
+      .single()
+
+    console.log("[v0] Provider check result:", {
+      found: !!providerCheck,
+      providerId: providerCheck?.id,
+      providerUserId: providerCheck?.user_id,
+      currentUserId: user.id,
+      matches: providerCheck?.user_id === user.id,
+    })
+
+    if (providerError || !providerCheck) {
+      console.error("[v0] Provider not found:", providerError)
+      return { error: "Provider profile not found" }
+    }
+
+    if (providerCheck.user_id !== user.id) {
+      console.error("[v0] Provider ownership mismatch:", {
+        providerUserId: providerCheck.user_id,
+        currentUserId: user.id,
+      })
+      return { error: "You can only create orders for your own provider profile" }
+    }
+
+    console.log("[v0] Provider ownership verified successfully")
+
+    const orderData = {
+      conversation_id: data.conversationId,
+      seeker_id: data.seekerId,
+      provider_id: data.providerId,
+      service_name_ar: data.serviceNameAr,
+      service_name_en: data.serviceNameEn,
+      service_description_ar: data.serviceDescriptionAr || "",
+      service_description_en: data.serviceDescriptionEn || "",
+      amount_cents: fees.amountCents,
+      platform_fee_cents: fees.platformFeeCents,
+      provider_amount_cents: fees.providerAmountCents,
+      status: "pending",
+    }
+
+    console.log("[v0] Inserting order data:", JSON.stringify(orderData, null, 2))
+
+    const { data: order, error } = await supabase.from("orders").insert(orderData).select().single()
+
+    if (error) {
+      console.error("[v0] Database error details:", {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      })
+      return { error: `Failed to create order: ${error.message}` }
+    }
+
+    console.log("[v0] Order created successfully:", order)
     return { order }
   } catch (error) {
-    console.error("[v0] Error creating order:", error)
-    return { error: "Failed to create order" }
+    console.error("[v0] Unexpected error creating order:", error)
+    return { error: `Failed to create order: ${error instanceof Error ? error.message : "Unknown error"}` }
   }
 }
 
