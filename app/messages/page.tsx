@@ -397,6 +397,7 @@ export default function MessagesPage() {
       if (existing) {
         console.log("[v0] Found existing conversation:", existing.id)
         setSelectedConversation(existing.id)
+        await fetchConversations(user.id)
       } else {
         console.log("[v0] Creating new conversation")
         const { data: newConv, error: createError } = await supabase
@@ -558,7 +559,10 @@ export default function MessagesPage() {
     try {
       await supabase.from("messages").delete().eq("conversation_id", selectedConversation)
 
+      await supabase.from("orders").delete().eq("conversation_id", selectedConversation).eq("status", "pending")
+
       setMessages([])
+      setOrders([])
       setShowClearDialog(false)
       await fetchConversations(user.id)
     } catch (error) {
