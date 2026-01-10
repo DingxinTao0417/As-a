@@ -273,15 +273,25 @@ export default function MessagesPage() {
         .from("conversations")
         .select("*")
         .eq("seeker_id", userId)
-        .eq("is_archived_by_seeker", false)
 
-      console.log("[v0] User is SEEKER in conversations:", seekerConvs?.length || 0)
+      console.log("[v0] ALL seeker conversations (before archive filter):", seekerConvs?.length || 0)
+      if (seekerError) {
+        console.error("[v0] Seeker query error:", seekerError)
+      }
       if (seekerConvs && seekerConvs.length > 0) {
         console.log(
-          "[v0] Seeker conversation IDs:",
-          seekerConvs.map((c: any) => c.id),
+          "[v0] Seeker conversations details:",
+          seekerConvs.map((c: any) => ({
+            id: c.id,
+            is_archived_by_seeker: c.is_archived_by_seeker,
+            is_archived_by_provider: c.is_archived_by_provider,
+          })),
         )
       }
+
+      // Filter non-archived conversations
+      const nonArchivedSeekerConvs = seekerConvs?.filter((c: any) => !c.is_archived_by_seeker) || []
+      console.log("[v0] Non-archived seeker conversations:", nonArchivedSeekerConvs.length)
 
       const { data: providerProfile } = await supabase.from("providers").select("id").eq("user_id", userId).single()
 
@@ -290,25 +300,27 @@ export default function MessagesPage() {
         console.log("[v0] Provider profile ID:", providerProfile.id)
       }
 
-      let providerConvs: any[] = []
+      let nonArchivedProviderConvs: any[] = []
       if (providerProfile) {
-        const { data: pConvs } = await supabase
-          .from("conversations")
-          .select("*")
-          .eq("provider_id", providerProfile.id)
-          .eq("is_archived_by_provider", false)
+        const { data: pConvs } = await supabase.from("conversations").select("*").eq("provider_id", providerProfile.id)
 
-        console.log("[v0] User is PROVIDER in conversations:", pConvs?.length || 0)
+        console.log("[v0] ALL provider conversations (before archive filter):", pConvs?.length || 0)
         if (pConvs && pConvs.length > 0) {
           console.log(
-            "[v0] Provider conversation IDs:",
-            pConvs.map((c: any) => c.id),
+            "[v0] Provider conversations details:",
+            pConvs.map((c: any) => ({
+              id: c.id,
+              is_archived_by_seeker: c.is_archived_by_seeker,
+              is_archived_by_provider: c.is_archived_by_provider,
+            })),
           )
         }
-        providerConvs = pConvs || []
+
+        nonArchivedProviderConvs = pConvs?.filter((c: any) => !c.is_archived_by_provider) || []
+        console.log("[v0] Non-archived provider conversations:", nonArchivedProviderConvs.length)
       }
 
-      const allConvs = [...(seekerConvs || []), ...providerConvs]
+      const allConvs = [...nonArchivedSeekerConvs, ...nonArchivedProviderConvs]
       console.log("[v0] TOTAL conversations found:", allConvs.length)
 
       if (allConvs.length === 0) {
