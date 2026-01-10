@@ -657,7 +657,7 @@ export default function MessagesPage() {
                     <p className="text-xs text-muted-foreground">{t("متصل", "Online")}</p>
                   </div>
 
-                  {currentConversation.is_provider && (
+                  {currentConversation.is_provider && userProfile?.role === "provider" && (
                     <Button
                       variant="outline"
                       size="sm"
