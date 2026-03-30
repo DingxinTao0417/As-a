@@ -8,31 +8,95 @@ import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { History, Calendar, DollarSign } from "lucide-react"
+import { History, Calendar, DollarSign, Clock, CheckCircle, CreditCard, Loader2, MessageCircle } from "lucide-react"
+import Link from "next/link"
 
-interface ServiceHistory {
+interface Order {
   id: string
-  provider_name: string
-  provider_avatar: string
+  provider_id: string
+  seeker_id: string
+  conversation_id: string
   service_name_ar: string
   service_name_en: string
-  service_description_ar: string
-  service_description_en: string
-  amount: number
+  service_description_ar: string | null
+  service_description_en: string | null
+  amount_cents: number
   status: string
-  completed_at: string
+  created_at: string
+  paid_at: string | null
+  completed_at: string | null
+  provider?: {
+    name_ar: string
+    name_en: string
+    avatar_url: string | null
+  }
+}
+
+const getStatusConfig = (status: string, t: (ar: string, en: string) => string) => {
+  switch (status) {
+    case "pending":
+      return {
+        label: t("في انتظار الدفع", "Waiting for Payment"),
+        variant: "outline" as const,
+        icon: CreditCard,
+        color: "text-yellow-600",
+        bgColor: "bg-yellow-50 border-yellow-200",
+      }
+    case "paid":
+      return {
+        label: t("قيد التنفيذ", "In Progress"),
+        variant: "secondary" as const,
+        icon: Loader2,
+        color: "text-blue-600",
+        bgColor: "bg-blue-50 border-blue-200",
+      }
+    case "awaiting_confirmation":
+      return {
+        label: t("في انتظار التأكيد", "Awaiting Confirmation"),
+        variant: "default" as const,
+        icon: Clock,
+        color: "text-purple-600",
+        bgColor: "bg-purple-50 border-purple-200",
+      }
+    case "completed":
+      return {
+        label: t("مكتمل", "Completed"),
+        variant: "default" as const,
+        icon: CheckCircle,
+        color: "text-green-600",
+        bgColor: "bg-green-50 border-green-200",
+      }
+    case "cancelled":
+      return {
+        label: t("ملغي", "Cancelled"),
+        variant: "destructive" as const,
+        icon: Clock,
+        color: "text-red-600",
+        bgColor: "bg-red-50 border-red-200",
+      }
+    default:
+      return {
+        label: status,
+        variant: "outline" as const,
+        icon: Clock,
+        color: "text-muted-foreground",
+        bgColor: "bg-muted/50",
+      }
+  }
 }
 
 export default function HistoryPage() {
   const { t, language } = useLanguage()
   const router = useRouter()
   const [loading, setLoading] = useState(true)
-  const [history, setHistory] = useState<ServiceHistory[]>([])
+  const [orders, setOrders] = useState<Order[]>([])
   const [user, setUser] = useState<any>(null)
+  const [userRole, setUserRole] = useState<string | null>(null)
 
   useEffect(() => {
-    const loadHistory = async () => {
+    const loadOrders = async () => {
       const supabase = createClient()
       const {
         data: { user },
@@ -45,8 +109,18 @@ export default function HistoryPage() {
 
       setUser(user)
 
-      const { data, error } = await supabase
-        .from("service_history")
+      // Get user profile to determine role
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single()
+
+      setUserRole(profile?.role || null)
+
+      // Fetch orders based on role
+      let query = supabase
+        .from("orders")
         .select(`
           *,
           provider:provider_id (
@@ -55,32 +129,41 @@ export default function HistoryPage() {
             avatar_url
           )
         `)
-        .eq("seeker_id", user.id)
-        .order("completed_at", { ascending: false })
+        .order("created_at", { ascending: false })
+
+      // For seekers, show their orders
+      // For providers, we need to get their provider IDs first
+      if (profile?.role === "provider") {
+        const { data: providerProfiles } = await supabase
+          .from("providers")
+          .select("id")
+          .eq("user_id", user.id)
+
+        if (providerProfiles && providerProfiles.length > 0) {
+          const providerIds = providerProfiles.map(p => p.id)
+          query = query.in("provider_id", providerIds)
+        }
+      } else {
+        query = query.eq("seeker_id", user.id)
+      }
+
+      const { data, error } = await query
 
       if (error) {
-        console.error("[v0] Error fetching history:", error)
+        console.error("[v0] Error fetching orders:", error)
       } else {
-        const formattedHistory = data?.map((item: any) => ({
-          id: item.id,
-          provider_name: language === "ar" ? item.provider?.name_ar : item.provider?.name_en,
-          provider_avatar: item.provider?.avatar_url,
-          service_name_ar: item.service_name_ar,
-          service_name_en: item.service_name_en,
-          service_description_ar: item.service_description_ar,
-          service_description_en: item.service_description_en,
-          amount: item.amount,
-          status: item.status,
-          completed_at: item.completed_at,
-        }))
-        setHistory(formattedHistory || [])
+        setOrders(data || [])
       }
 
       setLoading(false)
     }
 
-    loadHistory()
+    loadOrders()
   }, [router, language])
+
+  const formatAmount = (amountCents: number) => {
+    return (amountCents / 100).toFixed(2)
+  }
 
   if (loading) {
     return (
@@ -99,62 +182,103 @@ export default function HistoryPage() {
           <div className="mb-6">
             <h1 className="text-3xl font-bold flex items-center gap-2">
               <History className="h-8 w-8" />
-              {t("سجل الخدمات", "Service History")}
+              {t("سجل الطلبات", "Order History")}
             </h1>
             <p className="text-muted-foreground mt-2">
-              {t("عرض جميع الخدمات التي أنجزتها", "View all services you've completed")}
+              {userRole === "provider"
+                ? t("عرض جميع الطلبات المستلمة", "View all orders you've received")
+                : t("عرض جميع الطلبات والخدمات", "View all your orders and services")}
             </p>
           </div>
 
-          {history.length === 0 ? (
+          {orders.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center">
                 <History className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <p className="text-lg text-muted-foreground">
-                  {t("لا يوجد سجل خدمات حتى الآن", "No service history yet")}
+                  {t("لا يوجد طلبات حتى الآن", "No orders yet")}
                 </p>
               </CardContent>
             </Card>
           ) : (
             <div className="space-y-4">
-              {history.map((item) => (
-                <Card key={item.id}>
-                  <CardContent className="p-6">
-                    <div className="flex items-start gap-4">
-                      <Avatar className="h-12 w-12">
-                        <AvatarImage src={item.provider_avatar || "/placeholder.svg"} />
-                        <AvatarFallback>{item.provider_name?.charAt(0)}</AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1">
-                        <div className="flex items-start justify-between mb-2">
-                          <div>
-                            <h3 className="font-semibold text-lg">
-                              {language === "ar" ? item.service_name_ar : item.service_name_en}
-                            </h3>
-                            <p className="text-sm text-muted-foreground">{item.provider_name}</p>
+              {orders.map((order) => {
+                const statusConfig = getStatusConfig(order.status, t)
+                const StatusIcon = statusConfig.icon
+
+                return (
+                  <Card key={order.id} className={`border ${statusConfig.bgColor}`}>
+                    <CardContent className="p-6">
+                      <div className="flex items-start gap-4">
+                        <Avatar className="h-12 w-12">
+                          <AvatarImage src={order.provider?.avatar_url || "/placeholder.svg"} />
+                          <AvatarFallback>
+                            {(language === "ar" ? order.provider?.name_ar : order.provider?.name_en)?.charAt(0) || "?"}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1">
+                          <div className="flex items-start justify-between mb-2">
+                            <div>
+                              <h3 className="font-semibold text-lg">
+                                {language === "ar" ? order.service_name_ar : order.service_name_en}
+                              </h3>
+                              <p className="text-sm text-muted-foreground">
+                                {language === "ar" ? order.provider?.name_ar : order.provider?.name_en}
+                              </p>
+                            </div>
+                            <Badge 
+                              variant={statusConfig.variant}
+                              className={`flex items-center gap-1 ${statusConfig.color}`}
+                            >
+                              <StatusIcon className={`h-3 w-3 ${order.status === "paid" ? "animate-spin" : ""}`} />
+                              {statusConfig.label}
+                            </Badge>
                           </div>
-                          <Badge variant={item.status === "completed" ? "default" : "secondary"}>
-                            {item.status === "completed" ? t("مكتمل", "Completed") : t("ملغي", "Cancelled")}
-                          </Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground mb-3">
-                          {language === "ar" ? item.service_description_ar : item.service_description_en}
-                        </p>
-                        <div className="flex items-center gap-4 text-sm">
-                          <div className="flex items-center gap-1 text-muted-foreground">
-                            <Calendar className="h-4 w-4" />
-                            {new Date(item.completed_at).toLocaleDateString(language === "ar" ? "ar-SA" : "en-US")}
+                          
+                          {(order.service_description_ar || order.service_description_en) && (
+                            <p className="text-sm text-muted-foreground mb-3">
+                              {language === "ar" ? order.service_description_ar : order.service_description_en}
+                            </p>
+                          )}
+                          
+                          <div className="flex flex-wrap items-center gap-4 text-sm">
+                            <div className="flex items-center gap-1 text-muted-foreground">
+                              <Calendar className="h-4 w-4" />
+                              {new Date(order.created_at).toLocaleDateString(language === "ar" ? "ar-SA" : "en-US")}
+                            </div>
+                            <div className="flex items-center gap-1 font-semibold">
+                              <DollarSign className="h-4 w-4" />
+                              {formatAmount(order.amount_cents)} {t("ريال", "SAR")}
+                            </div>
+                            {order.paid_at && (
+                              <div className="flex items-center gap-1 text-green-600">
+                                <CheckCircle className="h-4 w-4" />
+                                {t("تم الدفع", "Paid")} {new Date(order.paid_at).toLocaleDateString(language === "ar" ? "ar-SA" : "en-US")}
+                              </div>
+                            )}
+                            {order.completed_at && (
+                              <div className="flex items-center gap-1 text-green-600">
+                                <CheckCircle className="h-4 w-4" />
+                                {t("اكتمل", "Completed")} {new Date(order.completed_at).toLocaleDateString(language === "ar" ? "ar-SA" : "en-US")}
+                              </div>
+                            )}
                           </div>
-                          <div className="flex items-center gap-1 font-semibold">
-                            <DollarSign className="h-4 w-4" />
-                            {item.amount} {t("ريال", "SAR")}
+
+                          {/* Action button to go to conversation */}
+                          <div className="mt-4">
+                            <Button variant="outline" size="sm" asChild>
+                              <Link href={`/messages?conversation=${order.conversation_id}`}>
+                                <MessageCircle className="h-4 w-4 mr-2" />
+                                {t("عرض المحادثة", "View Conversation")}
+                              </Link>
+                            </Button>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                )
+              })}
             </div>
           )}
         </div>
