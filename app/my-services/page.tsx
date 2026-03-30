@@ -244,15 +244,17 @@ export default function MyServicesPage() {
 
     const supabase = createClient()
 
+    // Use soft delete - set is_active to false instead of actually deleting
+    // This preserves conversation history and service history for seekers
     const { error } = await supabase
       .from("providers")
-      .delete()
+      .update({ is_active: false })
       .eq("id", selectedService.id)
 
     if (error) {
       toast({
         title: t("خطأ", "Error"),
-        description: t("فشل في حذف الخدمة", "Failed to delete service"),
+        description: t("فشل في إلغاء تنشيط الخدمة", "Failed to deactivate service"),
         variant: "destructive",
       })
       return
@@ -260,7 +262,7 @@ export default function MyServicesPage() {
 
     toast({
       title: t("تم بنجاح", "Success"),
-      description: t("تم حذف الخدمة بنجاح", "Service deleted successfully"),
+      description: t("تم إلغاء تنشيط الخدمة بنجاح", "Service deactivated successfully"),
     })
 
     setShowDeleteDialog(false)
@@ -638,22 +640,22 @@ export default function MyServicesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Deactivate Confirmation Dialog */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t("حذف الخدمة", "Delete Service")}</AlertDialogTitle>
+            <AlertDialogTitle>{t("إلغاء تنشيط الخدمة", "Deactivate Service")}</AlertDialogTitle>
             <AlertDialogDescription>
               {t(
-                "هل أنت متأكد من حذف هذه الخدمة؟ لا يمكن التراجع عن هذا الإجراء.",
-                "Are you sure you want to delete this service? This action cannot be undone."
+                "هل أنت متأكد من إلغاء تنشيط هذه الخدمة؟ لن تظهر الخدمة للعملاء الجدد، لكن سيتم الاحتفاظ بسجل المحادثات والطلبات السابقة.",
+                "Are you sure you want to deactivate this service? It will no longer be visible to new clients, but conversation and order history will be preserved."
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("إلغاء", "Cancel")}</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
-              {t("حذف", "Delete")}
+              {t("إلغاء التنشيط", "Deactivate")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

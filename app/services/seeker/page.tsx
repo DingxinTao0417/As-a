@@ -57,7 +57,12 @@ export default function TaskSeekerPage() {
       setIsLoading(true)
 
       try {
-        const { data, error } = await supabase.from("providers").select("*").order("rating", { ascending: false })
+        // Only show active services (is_active = true or null for backwards compatibility)
+        const { data, error } = await supabase
+          .from("providers")
+          .select("*")
+          .or("is_active.eq.true,is_active.is.null")
+          .order("rating", { ascending: false })
 
         if (error) {
           console.error("[v0] Error fetching providers:", error)
