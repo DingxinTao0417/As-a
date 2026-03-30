@@ -217,6 +217,18 @@ export default function BecomeProviderPage() {
 
       console.log("[v0] Provider created successfully:", result.data)
 
+      // Update user's profile role to "provider"
+      const { error: profileUpdateError } = await supabase
+        .from("profiles")
+        .update({ role: "provider" })
+        .eq("id", user.id)
+
+      if (profileUpdateError) {
+        console.error("[v0] Error updating profile role:", profileUpdateError)
+      } else {
+        console.log("[v0] Profile role updated to provider")
+      }
+
       toast({
         title: t("تم بنجاح!", "Success!"),
         description: t("تم إنشاء ملفك كمقدم خدمة بنجاح", "Your provider profile has been created successfully"),
