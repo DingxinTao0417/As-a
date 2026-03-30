@@ -975,175 +975,187 @@ export default function MessagesPage() {
                     </div>
                   )}
 
-                  {messages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={`flex ${message.sender_id === user.id ? "justify-end" : "justify-start"}`}
-                    >
-                      <div
-                        className={`max-w-[70%] rounded-2xl px-4 py-2 ${
-                          message.sender_id === user.id ? "bg-primary text-primary-foreground" : "bg-muted"
-                        }`}
-                      >
-                        <p className="text-sm">{message.content}</p>
-                        <p className="text-xs opacity-70 mt-1">
-                          {new Date(message.created_at).toLocaleTimeString(language === "ar" ? "ar-SA" : "en-US", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-
-                  {orders.map((order) => (
-                    <div key={order.id} className="flex justify-center">
-                      <Card className="max-w-md w-full p-4 bg-card border-2">
-                        <div className="space-y-3">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <h3 className="font-bold text-lg">
-                                {language === "ar" ? order.service_name_ar : order.service_name_en}
-                              </h3>
-                              {(language === "ar" ? order.service_description_ar : order.service_description_en) && (
-                                <p className="text-sm text-muted-foreground mt-1">
-                                  {language === "ar" ? order.service_description_ar : order.service_description_en}
-                                </p>
-                              )}
-                            </div>
-                            {order.status === "completed" && (
-                              <CheckCircle className="h-5 w-5 text-green-500 shrink-0 ml-2" />
-                            )}
-                          </div>
-
-                          <div className="bg-muted/50 rounded-lg p-3 space-y-1 text-sm">
-                            <div className="flex justify-between">
-                              <span>{t("المبلغ:", "Amount:")}</span>
-                              <span className="font-bold">{formatCurrency(order.amount_cents)}</span>
-                            </div>
-                            <div className="flex justify-between text-xs text-muted-foreground">
-                              <span>{t("رسوم المنصة:", "Platform Fee:")}</span>
-                              <span>-{formatCurrency(order.platform_fee_cents)}</span>
-                            </div>
-                            {order.paid_at && (
-                              <div className="flex justify-between text-xs text-muted-foreground pt-1 border-t">
-                                <span>{t("تاريخ الدفع:", "Paid on:")}</span>
-                                <span>
-                                  {new Date(order.paid_at).toLocaleDateString(language === "ar" ? "ar-SA" : "en-US")}
-                                </span>
-                              </div>
-                            )}
-                            {order.completed_at && (
-                              <div className="flex justify-between text-xs text-muted-foreground">
-                                <span>{t("تاريخ الإنجاز:", "Completed on:")}</span>
-                                <span>
-                                  {new Date(order.completed_at).toLocaleDateString(
-                                    language === "ar" ? "ar-SA" : "en-US",
-                                  )}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="flex items-center justify-between gap-2 pt-2">
-                            <span
-                              className={`text-xs px-2 py-1 rounded-full ${
-                                order.status === "pending"
-                                  ? "bg-yellow-100 text-yellow-800"
-                                  : order.status === "paid"
-                                    ? "bg-blue-100 text-blue-800"
-                                    : order.status === "completed"
-                                      ? "bg-green-100 text-green-800"
-                                      : order.status === "awaiting_confirmation"
-                                        ? "bg-purple-100 text-purple-800"
-                                        : order.status === "cancelled"
-                                          ? "bg-red-100 text-red-800"
-                                          : "bg-gray-100 text-gray-800"
+                  {/* Merge messages and orders into a single chronological timeline */}
+                  {[
+                    ...messages.map((m) => ({ type: 'message' as const, data: m, time: m.created_at })),
+                    ...orders.map((o) => ({ type: 'order' as const, data: o, time: o.created_at })),
+                  ]
+                    .sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
+                    .map((item) => {
+                      if (item.type === 'message') {
+                        const message = item.data as Message
+                        return (
+                          <div
+                            key={`msg-${message.id}`}
+                            className={`flex ${message.sender_id === user.id ? "justify-end" : "justify-start"}`}
+                          >
+                            <div
+                              className={`max-w-[70%] rounded-2xl px-4 py-2 ${
+                                message.sender_id === user.id ? "bg-primary text-primary-foreground" : "bg-muted"
                               }`}
                             >
-                              {order.status === "pending" && t("قيد الانتظار", "Pending")}
-                              {order.status === "paid" && t("مدفوع", "Paid")}
-                              {order.status === "completed" && t("مكتمل", "Completed")}
-                              {order.status === "cancelled" && t("ملغي", "Cancelled")}
-                              {order.status === "awaiting_confirmation" &&
-                                t("في انتظار التأكيد", "Awaiting Confirmation")}
-                            </span>
-
-                            {/* Seeker buttons */}
-                            {order.seeker_id === user.id && (
-                              <div className="flex gap-2">
-                                {order.status === "pending" && (
-                                  <Button
-                                    size="sm"
-                                    onClick={() => handlePayment(order.id)}
-                                    disabled={processingPayment}
-                                    className="gap-2"
-                                  >
-                                    <DollarSign className="h-4 w-4" />
-                                    {processingPayment
-                                      ? t("جاري المعالجة...", "Processing...")
-                                      : t("ادفع الآن", "Pay Now")}
-                                  </Button>
-                                )}
-                                {order.status === "awaiting_confirmation" && (
-                                  <Button
-                                    size="sm"
-                                    onClick={() => handleConfirmOrder(order.id)}
-                                    disabled={processingConfirmation}
-                                    className="gap-2"
-                                  >
-                                    <CheckCircle className="h-4 w-4" />
-                                    {processingConfirmation
-                                      ? t("جاري المعالجة...", "Processing...")
-                                      : t("تأكيد الاستلام", "Confirm Delivery")}
-                                  </Button>
-                                )}
-                                {(order.status === "paid" || order.status === "completed") && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => router.push("/history")}
-                                    className="gap-2"
-                                  >
-                                    <Eye className="h-4 w-4" />
-                                    {t("عرض التفاصيل", "View Details")}
-                                  </Button>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Provider buttons - only show when user is provider */}
-                            {currentConversation?.is_provider && (
-                              <>
-                                {order.status === "paid" && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => handleCompleteOrder(order.id)}
-                                    className="gap-2"
-                                  >
-                                    <CheckCircle className="h-4 w-4" />
-                                    {t("إكمال الطلب", "Complete Order")}
-                                  </Button>
-                                )}
-                                {(order.status === "awaiting_confirmation" || order.status === "completed") && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => router.push("/dashboard")}
-                                    className="gap-2"
-                                  >
-                                    <Eye className="h-4 w-4" />
-                                    {t("عرض التفاصيل", "View Details")}
-                                  </Button>
-                                )}
-                              </>
-                            )}
+                              <p className="text-sm">{message.content}</p>
+                              <p className="text-xs opacity-70 mt-1">
+                                {new Date(message.created_at).toLocaleTimeString(language === "ar" ? "ar-SA" : "en-US", {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      </Card>
-                    </div>
-                  ))}
+                        )
+                      } else {
+                        const order = item.data as Order
+                        return (
+                          <div key={`order-${order.id}`} className="flex justify-center">
+                            <Card className="max-w-md w-full p-4 bg-card border-2">
+                              <div className="space-y-3">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1">
+                                    <h3 className="font-bold text-lg">
+                                      {language === "ar" ? order.service_name_ar : order.service_name_en}
+                                    </h3>
+                                    {(language === "ar" ? order.service_description_ar : order.service_description_en) && (
+                                      <p className="text-sm text-muted-foreground mt-1">
+                                        {language === "ar" ? order.service_description_ar : order.service_description_en}
+                                      </p>
+                                    )}
+                                  </div>
+                                  {order.status === "completed" && (
+                                    <CheckCircle className="h-5 w-5 text-green-500 shrink-0 ml-2" />
+                                  )}
+                                </div>
+
+                                <div className="bg-muted/50 rounded-lg p-3 space-y-1 text-sm">
+                                  <div className="flex justify-between">
+                                    <span>{t("المبلغ:", "Amount:")}</span>
+                                    <span className="font-bold">{formatCurrency(order.amount_cents)}</span>
+                                  </div>
+                                  <div className="flex justify-between text-xs text-muted-foreground">
+                                    <span>{t("رسوم المنصة:", "Platform Fee:")}</span>
+                                    <span>-{formatCurrency(order.platform_fee_cents)}</span>
+                                  </div>
+                                  {order.paid_at && (
+                                    <div className="flex justify-between text-xs text-muted-foreground pt-1 border-t">
+                                      <span>{t("تاريخ الدفع:", "Paid on:")}</span>
+                                      <span>
+                                        {new Date(order.paid_at).toLocaleDateString(language === "ar" ? "ar-SA" : "en-US")}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {order.completed_at && (
+                                    <div className="flex justify-between text-xs text-muted-foreground">
+                                      <span>{t("تاريخ الإنجاز:", "Completed on:")}</span>
+                                      <span>
+                                        {new Date(order.completed_at).toLocaleDateString(
+                                          language === "ar" ? "ar-SA" : "en-US",
+                                        )}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center justify-between gap-2 pt-2">
+                                  <span
+                                    className={`text-xs px-2 py-1 rounded-full ${
+                                      order.status === "pending"
+                                        ? "bg-yellow-100 text-yellow-800"
+                                        : order.status === "paid"
+                                          ? "bg-blue-100 text-blue-800"
+                                          : order.status === "completed"
+                                            ? "bg-green-100 text-green-800"
+                                            : order.status === "awaiting_confirmation"
+                                              ? "bg-purple-100 text-purple-800"
+                                              : order.status === "cancelled"
+                                                ? "bg-red-100 text-red-800"
+                                                : "bg-gray-100 text-gray-800"
+                                    }`}
+                                  >
+                                    {order.status === "pending" && t("قيد الانتظار", "Pending")}
+                                    {order.status === "paid" && t("مدفوع", "Paid")}
+                                    {order.status === "completed" && t("مكتمل", "Completed")}
+                                    {order.status === "cancelled" && t("ملغي", "Cancelled")}
+                                    {order.status === "awaiting_confirmation" &&
+                                      t("في انتظار التأكيد", "Awaiting Confirmation")}
+                                  </span>
+
+                                  {/* Seeker buttons */}
+                                  {order.seeker_id === user.id && (
+                                    <div className="flex gap-2">
+                                      {order.status === "pending" && (
+                                        <Button
+                                          size="sm"
+                                          onClick={() => handlePayment(order.id)}
+                                          disabled={processingPayment}
+                                          className="gap-2"
+                                        >
+                                          <DollarSign className="h-4 w-4" />
+                                          {processingPayment
+                                            ? t("جاري المعالجة...", "Processing...")
+                                            : t("ادفع الآن", "Pay Now")}
+                                        </Button>
+                                      )}
+                                      {order.status === "awaiting_confirmation" && (
+                                        <Button
+                                          size="sm"
+                                          onClick={() => handleConfirmOrder(order.id)}
+                                          disabled={processingConfirmation}
+                                          className="gap-2"
+                                        >
+                                          <CheckCircle className="h-4 w-4" />
+                                          {processingConfirmation
+                                            ? t("جاري المعالجة...", "Processing...")
+                                            : t("تأكيد الاستلام", "Confirm Delivery")}
+                                        </Button>
+                                      )}
+                                      {(order.status === "paid" || order.status === "completed") && (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => router.push("/history")}
+                                          className="gap-2"
+                                        >
+                                          <Eye className="h-4 w-4" />
+                                          {t("عرض التفاصيل", "View Details")}
+                                        </Button>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Provider buttons - only show when user is provider */}
+                                  {currentConversation?.is_provider && (
+                                    <>
+                                      {order.status === "paid" && (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => handleCompleteOrder(order.id)}
+                                          className="gap-2"
+                                        >
+                                          <CheckCircle className="h-4 w-4" />
+                                          {t("إكمال الطلب", "Complete Order")}
+                                        </Button>
+                                      )}
+                                      {(order.status === "awaiting_confirmation" || order.status === "completed") && (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => router.push("/dashboard")}
+                                          className="gap-2"
+                                        >
+                                          <Eye className="h-4 w-4" />
+                                          {t("عرض التفاصيل", "View Details")}
+                                        </Button>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </Card>
+                          </div>
+                        )
+                      }
+                    })}
                 </div>
 
                 <div className="p-4 border-t">
