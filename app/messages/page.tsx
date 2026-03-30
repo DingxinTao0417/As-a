@@ -35,7 +35,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { CreateOrderDialog } from "@/components/create-order-dialog"
-import { createCheckoutSession, completeOrder, confirmOrder } from "@/app/actions/orders"
+import { createCheckoutSession, completeOrder, confirmOrder, verifyPayment } from "@/app/actions/orders"
 import { formatCurrency } from "@/lib/stripe"
 import type { RealtimeChannel } from "@supabase/supabase-js"
 
@@ -127,6 +127,29 @@ export default function MessagesPage() {
       createOrOpenConversation(providerId)
     }
   }, [searchParams, user])
+
+  // Handle payment callback - verify and update order status when returning from Stripe
+  useEffect(() => {
+    const paymentStatus = searchParams.get("payment")
+    const orderId = searchParams.get("order_id")
+
+    if (paymentStatus === "success" && orderId) {
+      console.log("[v0] Payment success callback detected for order:", orderId)
+      verifyPayment(orderId).then((result) => {
+        console.log("[v0] Payment verification result:", result)
+        if (result.success) {
+          // Refresh orders for the current conversation
+          if (selectedConversation) {
+            fetchOrders(selectedConversation)
+          }
+        } else {
+          console.error("[v0] Payment verification failed:", result.error)
+        }
+      })
+      // Clean up URL params
+      router.replace("/messages", { scroll: false })
+    }
+  }, [searchParams])
 
   // Setup Realtime subscription for messages when conversation is selected
   useEffect(() => {

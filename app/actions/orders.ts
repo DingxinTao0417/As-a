@@ -285,3 +285,66 @@ export async function confirmOrder(orderId: string) {
     return { error: "Failed to confirm order" }
   }
 }
+
+export async function verifyPayment(orderId: string) {
+  try {
+    console.log("[v0] Verifying payment for order:", orderId)
+
+    const supabase = await createServerClient()
+
+    // Get the order with the stored checkout session ID
+    const { data: order, error: orderError } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("id", orderId)
+      .single()
+
+    if (orderError || !order) {
+      console.error("[v0] Order not found:", orderError)
+      return { error: "Order not found" }
+    }
+
+    // If already paid, no need to verify
+    if (order.status !== "pending") {
+      console.log("[v0] Order already in status:", order.status)
+      return { success: true, status: order.status }
+    }
+
+    // Check if we have a checkout session ID
+    if (!order.stripe_checkout_session_id) {
+      console.error("[v0] No checkout session ID stored for order")
+      return { error: "No checkout session found for this order" }
+    }
+
+    // Verify the checkout session with Stripe
+    const stripe = getStripe()
+    const session = await stripe.checkout.sessions.retrieve(order.stripe_checkout_session_id)
+
+    console.log("[v0] Stripe session status:", session.payment_status)
+
+    if (session.payment_status === "paid") {
+      // Update order to paid
+      const { error: updateError } = await supabase
+        .from("orders")
+        .update({
+          status: "paid",
+          stripe_payment_intent_id: session.payment_intent as string,
+          paid_at: new Date().toISOString(),
+        })
+        .eq("id", orderId)
+
+      if (updateError) {
+        console.error("[v0] Error updating order:", updateError)
+        return { error: "Failed to update order status" }
+      }
+
+      console.log("[v0] Order updated to paid status via URL callback")
+      return { success: true, status: "paid" }
+    }
+
+    return { error: "Payment not completed", status: session.payment_status }
+  } catch (error) {
+    console.error("[v0] Error verifying payment:", error)
+    return { error: `Failed to verify payment: ${error instanceof Error ? error.message : "Unknown error"}` }
+  }
+}
