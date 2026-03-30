@@ -612,8 +612,9 @@ export default function MessagesPage() {
           }
         }
 
-        setSelectedConversation(existing.id)
+        // First refresh conversations list, then set selected
         await fetchConversations(user.id)
+        setSelectedConversation(existing.id)
       } else {
         console.log("[v0] Creating new conversation")
         const { data: newConv, error: createError } = await supabase
@@ -628,10 +629,14 @@ export default function MessagesPage() {
         console.log("[v0] New conversation created:", newConv, "Error:", createError)
 
         if (newConv) {
-          setSelectedConversation(newConv.id)
+          // First refresh conversations list, then set selected
           await fetchConversations(user.id)
+          setSelectedConversation(newConv.id)
         }
       }
+      
+      // Clear the URL parameter after processing
+      router.replace("/messages", { scroll: false })
     } catch (error) {
       console.error("[v0] Error creating/opening conversation:", error)
     }
