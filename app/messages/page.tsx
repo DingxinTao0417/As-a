@@ -35,7 +35,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { CreateOrderDialog } from "@/components/create-order-dialog"
-import { createCheckoutSession, completeOrder, confirmOrder } from "@/app/actions/orders"
+import { createCheckoutSession, completeOrder, confirmOrder, verifyAndUpdatePayment } from "@/app/actions/orders"
+import { useToast } from "@/hooks/use-toast"
 import { formatCurrency } from "@/lib/stripe"
 import type { RealtimeChannel } from "@supabase/supabase-js"
 
@@ -82,6 +83,7 @@ export default function MessagesPage() {
   const { t, language } = useLanguage()
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { toast } = useToast()
   const [user, setUser] = useState<any>(null)
   const [userProfile, setUserProfile] = useState<any>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -96,6 +98,7 @@ export default function MessagesPage() {
   const [processingPayment, setProcessingPayment] = useState(false)
   const [processingConfirmation, setProcessingConfirmation] = useState(false)
   const [processedProviderId, setProcessedProviderId] = useState<string | null>(null)
+  const [paymentProcessed, setPaymentProcessed] = useState(false)
   
   // Realtime subscriptions
   const messagesChannelRef = useRef<RealtimeChannel | null>(null)
@@ -127,6 +130,52 @@ export default function MessagesPage() {
       createOrOpenConversation(providerId)
     }
   }, [searchParams, user])
+
+  // Handle payment success callback
+  useEffect(() => {
+    const payment = searchParams.get("payment")
+    const orderId = searchParams.get("order_id")
+    
+    if (payment === "success" && orderId && !paymentProcessed) {
+      setPaymentProcessed(true)
+      
+      // Verify and update payment status
+      const verifyPayment = async () => {
+        console.log("[v0] Verifying payment for order:", orderId)
+        const result = await verifyAndUpdatePayment(orderId)
+        
+        if (result.success) {
+          toast({
+            title: t("تم الدفع بنجاح", "Payment Successful"),
+            description: t("تم تحديث حالة الطلب", "Order status has been updated"),
+          })
+          
+          // Refresh orders if we have a selected conversation
+          if (selectedConversation) {
+            fetchOrders(selectedConversation)
+          }
+        } else if (result.error) {
+          toast({
+            title: t("خطأ في التحقق", "Verification Error"),
+            description: result.error,
+            variant: "destructive",
+          })
+        }
+        
+        // Clear URL parameters
+        router.replace("/messages", { scroll: false })
+      }
+      
+      verifyPayment()
+    } else if (payment === "cancelled") {
+      toast({
+        title: t("تم إلغاء الدفع", "Payment Cancelled"),
+        description: t("لم يتم إكمال الدفع", "Payment was not completed"),
+        variant: "destructive",
+      })
+      router.replace("/messages", { scroll: false })
+    }
+  }, [searchParams, paymentProcessed, selectedConversation, toast, t, router])
 
   // Setup Realtime subscription for messages when conversation is selected
   useEffect(() => {
