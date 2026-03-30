@@ -105,7 +105,7 @@ export async function createOrder(data: {
   }
 }
 
-export async function createCheckoutSession(orderId: string) {
+export async function createCheckoutSession(orderId: string, currentUrl?: string) {
   try {
     console.log("[v0] ========== CREATING CHECKOUT SESSION ==========")
     console.log("[v0] Order ID:", orderId)
@@ -143,9 +143,19 @@ export async function createCheckoutSession(orderId: string) {
     const stripe = getStripe()
     console.log("[v0] Stripe initialized:", !!stripe)
 
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL?.startsWith("http")
-      ? process.env.NEXT_PUBLIC_SITE_URL
-      : "https://v0-professional-services-platform-ruby.vercel.app"
+    // Use the current URL origin if provided, otherwise fallback to env var
+    let baseUrl = "https://v0-professional-services-platform-ruby.vercel.app"
+    
+    if (currentUrl) {
+      try {
+        const url = new URL(currentUrl)
+        baseUrl = url.origin
+      } catch (e) {
+        console.log("[v0] Failed to parse currentUrl, using default")
+      }
+    } else if (process.env.NEXT_PUBLIC_SITE_URL?.startsWith("http")) {
+      baseUrl = process.env.NEXT_PUBLIC_SITE_URL
+    }
 
     console.log("[v0] Base URL:", baseUrl)
 

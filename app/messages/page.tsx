@@ -401,7 +401,9 @@ export default function MessagesPage() {
     setProcessingPayment(true)
     try {
       console.log("[v0] Starting payment process for order:", orderId)
-      const result = await createCheckoutSession(orderId)
+      // Pass current URL so Stripe can redirect back to the correct environment
+      const currentUrl = typeof window !== 'undefined' ? window.location.href : undefined
+      const result = await createCheckoutSession(orderId, currentUrl)
 
       if (result.error) {
         alert(result.error)
