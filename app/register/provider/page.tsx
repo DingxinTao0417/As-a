@@ -63,6 +63,44 @@ export default function BecomeProviderPage() {
         return
       }
 
+      // Check if user is already a provider
+      const { data: existingProvider } = await supabase
+        .from("providers")
+        .select("id")
+        .eq("user_id", user.id)
+        .single()
+
+      if (existingProvider) {
+        // User is already a provider, redirect to dashboard
+        toast({
+          title: t("أنت مقدم خدمة بالفعل", "You are already a provider"),
+          description: t("يمكنك إدارة خدماتك من لوحة التحكم", "You can manage your services from the dashboard"),
+        })
+        router.push("/dashboard")
+        return
+      }
+
+      // Check user's role - seeker users cannot become providers
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single()
+
+      // If user is a seeker, they cannot register as a provider
+      if (profile?.role === "seeker") {
+        toast({
+          title: t("غير مسموح", "Not Allowed"),
+          description: t(
+            "حسابات الباحثين عن خدمات لا يمكنها تقديم خدمات. يرجى إنشاء حساب مقدم خدمة جديد.",
+            "Seeker accounts cannot offer services. Please create a new provider account."
+          ),
+          variant: "destructive",
+        })
+        router.push("/")
+        return
+      }
+
       setUser(user)
       setFormData((prev) => ({
         ...prev,
@@ -73,7 +111,7 @@ export default function BecomeProviderPage() {
     }
 
     checkUser()
-  }, [router])
+  }, [router, toast, t])
 
   const addSkill = () => {
     if (skillInput.trim() && !skills.includes(skillInput.trim())) {
@@ -216,6 +254,18 @@ export default function BecomeProviderPage() {
       }
 
       console.log("[v0] Provider created successfully:", result.data)
+
+      // Update user's profile role to "provider"
+      const { error: profileUpdateError } = await supabase
+        .from("profiles")
+        .update({ role: "provider" })
+        .eq("id", user.id)
+
+      if (profileUpdateError) {
+        console.error("[v0] Error updating profile role:", profileUpdateError)
+      } else {
+        console.log("[v0] Profile role updated to provider")
+      }
 
       toast({
         title: t("تم بنجاح!", "Success!"),

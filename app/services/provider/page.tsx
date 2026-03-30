@@ -18,9 +18,17 @@ import {
   Briefcase,
 } from "lucide-react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 
 export default function ServiceProviderPage() {
   const { t } = useLanguage()
+  const router = useRouter()
+
+  const handleStartNow = () => {
+    // Mark that user has seen the introduction page
+    sessionStorage.setItem("provider_intro_seen", "true")
+    router.push("/register/provider")
+  }
 
   const benefits = [
     {
@@ -195,11 +203,9 @@ export default function ServiceProviderPage() {
                 )}
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-                <Button size="lg" className="bg-primary hover:bg-primary/90 text-lg px-8" asChild>
-                  <Link href="/register/provider">
-                    {t("ابدأ الآن مجاناً", "Start Free Now")}
-                    <ArrowRight className="mr-2 h-5 w-5" />
-                  </Link>
+                <Button size="lg" className="bg-primary hover:bg-primary/90 text-lg px-8" onClick={handleStartNow}>
+                  {t("ابدأ الآن مجاناً", "Start Free Now")}
+                  <ArrowRight className="mr-2 h-5 w-5" />
                 </Button>
                 <Button size="lg" variant="outline" className="text-lg px-8 bg-transparent" asChild>
                   <Link href="#pricing">{t("تصفح الباقات", "View Plans")}</Link>
@@ -351,11 +357,9 @@ export default function ServiceProviderPage() {
                   "Start your professional journey today and be part of the professional community",
                 )}
               </p>
-              <Button size="lg" className="bg-primary hover:bg-primary/90 text-lg px-8" asChild>
-                <Link href="/register/provider">
-                  {t("سجل الآن مجاناً", "Register Free Now")}
-                  <ArrowRight className="mr-2 h-5 w-5" />
-                </Link>
+              <Button size="lg" className="bg-primary hover:bg-primary/90 text-lg px-8" onClick={handleStartNow}>
+                {t("سجل الآن مجاناً", "Register Free Now")}
+                <ArrowRight className="mr-2 h-5 w-5" />
               </Button>
             </div>
           </div>
