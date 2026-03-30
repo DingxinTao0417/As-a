@@ -63,6 +63,30 @@ export default function BecomeProviderPage() {
         return
       }
 
+      // Check if user is already a provider
+      const { data: existingProvider } = await supabase
+        .from("providers")
+        .select("id")
+        .eq("user_id", user.id)
+        .single()
+
+      if (existingProvider) {
+        // User is already a provider, redirect to dashboard
+        toast({
+          title: t("أنت مقدم خدمة بالفعل", "You are already a provider"),
+          description: t("يمكنك إدارة خدماتك من لوحة التحكم", "You can manage your services from the dashboard"),
+        })
+        router.push("/dashboard")
+        return
+      }
+
+      // Check user's role - seeker users need to go through the registration flow
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single()
+
       setUser(user)
       setFormData((prev) => ({
         ...prev,
@@ -73,7 +97,7 @@ export default function BecomeProviderPage() {
     }
 
     checkUser()
-  }, [router])
+  }, [router, toast, t])
 
   const addSkill = () => {
     if (skillInput.trim() && !skills.includes(skillInput.trim())) {
