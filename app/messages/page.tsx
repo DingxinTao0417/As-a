@@ -95,6 +95,7 @@ export default function MessagesPage() {
   const [showCreateOrder, setShowCreateOrder] = useState(false)
   const [processingPayment, setProcessingPayment] = useState(false)
   const [processingConfirmation, setProcessingConfirmation] = useState(false)
+  const [processedProviderId, setProcessedProviderId] = useState<string | null>(null)
   
   // Realtime subscriptions
   const messagesChannelRef = useRef<RealtimeChannel | null>(null)
@@ -120,7 +121,9 @@ export default function MessagesPage() {
 
   useEffect(() => {
     const providerId = searchParams.get("provider")
-    if (providerId && user) {
+    // Only process if we have a new provider ID that hasn't been processed yet
+    if (providerId && user && providerId !== processedProviderId) {
+      setProcessedProviderId(providerId)
       createOrOpenConversation(providerId)
     }
   }, [searchParams, user])
