@@ -435,9 +435,20 @@ export default function MessagesPage() {
 
       if (result.url) {
         console.log("[v0] Stripe checkout URL received:", result.url)
-        // Redirect to Stripe checkout in the same window
-        // This ensures proper redirect back after payment completes
-        window.location.href = result.url
+        // Try to redirect in the same window first
+        try {
+          window.location.assign(result.url)
+        } catch (e) {
+          console.log("[v0] location.assign failed, trying open:", e)
+          // Fallback: open in new window/tab
+          const win = window.open(result.url, "_blank")
+          if (!win) {
+            // If popup blocked, show the URL for manual navigation
+            alert(language === "ar" 
+              ? `يرجى فتح هذا الرابط يدوياً: ${result.url}` 
+              : `Please open this link manually: ${result.url}`)
+          }
+        }
       }
     } catch (error) {
       console.error("[v0] Payment error:", error)
