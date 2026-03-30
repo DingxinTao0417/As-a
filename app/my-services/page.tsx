@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { useLanguage } from "@/components/language-provider"
-import { Plus, Edit2, Trash2, Save, Briefcase, Clock, DollarSign } from "lucide-react"
+import { Plus, Edit2, Trash2, Save, Briefcase, Clock, DollarSign, Star, MessageCircle } from "lucide-react"
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
@@ -55,6 +55,14 @@ type Service = {
   created_at: string
 }
 
+type ProviderReview = {
+  id: string
+  rating: number
+  comment: string | null
+  created_at: string
+  profiles: any
+}
+
 const categories = [
   { value: "development", label_ar: "تطوير البرمجيات", label_en: "Software Development" },
   { value: "design", label_ar: "التصميم", label_en: "Design" },
@@ -86,6 +94,10 @@ export default function MyServicesPage() {
   const [selectedService, setSelectedService] = useState<Service | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [featureInput, setFeatureInput] = useState("")
+
+  const [showReviewsDialog, setShowReviewsDialog] = useState(false)
+  const [reviewsList, setReviewsList] = useState<ProviderReview[]>([])
+  const [isLoadingReviews, setIsLoadingReviews] = useState(false)
 
   const [formData, setFormData] = useState({
     name_ar: "",
@@ -315,6 +327,50 @@ export default function MyServicesPage() {
     setShowDeleteDialog(false)
     setSelectedService(null)
     await fetchServices(providerId)
+  }
+
+  const confirmDelete = async () => {
+    if (!selectedService) return
+
+    setIsSaving(true)
+    const supabase = createClient()
+    const { error } = await supabase.from("services").delete().eq("id", selectedService.id)
+
+    if (error) {
+      toast({
+        title: t("خطأ", "Error"),
+        description: error.message,
+        variant: "destructive",
+      })
+    } else {
+      toast({
+        title: t("تم بنجاح", "Success"),
+        description: t("تم حذف الخدمة", "Service deleted successfully"),
+      })
+      fetchServices(providerId!)
+    }
+
+    setShowDeleteDialog(false)
+    setIsSaving(false)
+  }
+
+  const handleViewReviews = async (service: Service) => {
+    setSelectedService(service)
+    setShowReviewsDialog(true)
+    setIsLoadingReviews(true)
+    const supabase = createClient()
+    
+    const { data } = await supabase
+      .from("reviews")
+      .select(`
+        id, rating, comment, created_at,
+        profiles!reviewer_id(full_name, avatar_url)
+      `)
+      .eq("service_id", service.id)
+      .order("created_at", { ascending: false })
+      
+    setReviewsList(data || [])
+    setIsLoadingReviews(false)
   }
 
   const openEditDialog = (service: Service) => {
@@ -560,19 +616,25 @@ export default function MyServicesPage() {
                       )}
                     </div>
                   )}
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" className="flex-1" onClick={() => openEditDialog(service)}>
-                      <Edit2 className="h-4 w-4 mr-2" />
-                      {t("تعديل", "Edit")}
+                  <div className="flex flex-col gap-2">
+                    <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => handleViewReviews(service)}>
+                      <MessageCircle className="h-4 w-4 text-primary" />
+                      {t("عرض التقييمات", "View Reviews")}
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                      onClick={() => openDeleteDialog(service)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" className="flex-1" onClick={() => openEditDialog(service)}>
+                        <Edit2 className="h-4 w-4 mr-2" />
+                        {t("تعديل", "Edit")}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        onClick={() => openDeleteDialog(service)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -654,6 +716,73 @@ export default function MyServicesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* View Reviews Dialog */}
+      <Dialog open={showReviewsDialog} onOpenChange={setShowReviewsDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {t("تقييمات الخدمة: ", "Reviews for: ")} 
+              {selectedService ? (language === "ar" ? selectedService.name_ar : selectedService.name_en) : ""}
+            </DialogTitle>
+            <DialogDescription>
+              {t("جميع التقييمات التي تلقيتها لهذه الخدمة", "All reviews you have received for this service")}
+            </DialogDescription>
+          </DialogHeader>
+
+          {isLoadingReviews ? (
+            <div className="flex justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : reviewsList.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <MessageCircle className="h-12 w-12 mx-auto mb-3 opacity-20" />
+              <p>{t("لا توجد تقييمات حتى الآن", "No reviews yet")}</p>
+            </div>
+          ) : (
+            <div className="space-y-4 py-4">
+              {reviewsList.map((review) => (
+                <div key={review.id} className="bg-muted/30 p-4 rounded-lg border">
+                  <div className="flex justify-between items-start mb-2">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full bg-secondary overflow-hidden flex-shrink-0">
+                        {review.profiles?.avatar_url ? (
+                          <img src={review.profiles.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-sm font-bold">
+                            {review.profiles?.full_name?.charAt(0) || "?"}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-sm">{review.profiles?.full_name || t("مستخدم", "User")}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(review.created_at).toLocaleDateString(language === "ar" ? "ar-SA" : "en-US")}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center bg-background px-2 py-1 rounded-full border shadow-sm flex-shrink-0">
+                      <Star className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400 mr-1" />
+                      <span className="text-xs font-bold">{review.rating}</span>
+                    </div>
+                  </div>
+                  {review.comment && (
+                    <p className="text-sm mt-3 pt-3 border-t text-foreground/90 leading-relaxed">
+                      "{review.comment}"
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowReviewsDialog(false)}>
+              {t("إغلاق", "Close")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -132,6 +132,7 @@ export async function createCheckoutSession(orderId: string) {
       id: order.id,
       amount_cents: order.amount_cents,
       service_name: order.service_name_en,
+      provider_id: order.provider_id,
       status: order.status,
     })
 
@@ -170,7 +171,7 @@ export async function createCheckoutSession(orderId: string) {
         },
       ],
       mode: "payment" as const,
-      success_url: `${baseUrl}/messages?payment=success&order_id=${orderId}`,
+      success_url: `${baseUrl}/messages?provider=${order.provider_id}&payment=success&order_id=${orderId}`,
       cancel_url: `${baseUrl}/messages?payment=cancelled`,
       metadata: {
         order_id: orderId,
@@ -351,5 +352,103 @@ export async function verifyPayment(orderId: string) {
   } catch (error) {
     console.error("[v0] Error verifying payment:", error)
     return { error: `Failed to verify payment: ${error instanceof Error ? error.message : "Unknown error"}` }
+  }
+}
+
+export async function createDirectOrder(serviceId: string) {
+  try {
+    const supabase = await createServerClient()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      return { error: "You must be logged in to order a service" }
+    }
+
+    // 1. Fetch Service Details
+    const { data: service, error: serviceError } = await supabase
+      .from("services")
+      .select("*, providers(user_id)")
+      .eq("id", serviceId)
+      .single()
+
+    if (serviceError || !service) {
+      return { error: "Service not found" }
+    }
+
+    // You cannot buy your own service (provider user_id == current user)
+    // Supabase returns nested relations as objects or arrays. We expect single object.
+    const providerUserId = Array.isArray(service.providers) 
+      ? service.providers[0]?.user_id 
+      : service.providers?.user_id;
+
+    if (providerUserId === user.id) {
+      return { error: "You cannot purchase your own service" }
+    }
+
+    // 2. Determine price
+    const amountCents = Math.round(service.price * 100)
+    if (amountCents < 100) {
+      return { error: "Service price is invalid or too low" }
+    }
+    const fees = calculateFees(amountCents)
+
+    // 3. Find or create conversation
+    let conversationId: string
+    const { data: existingConv } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("seeker_id", user.id)
+      .eq("provider_id", service.provider_id)
+      .single()
+
+    if (existingConv) {
+      conversationId = existingConv.id
+    } else {
+      const { data: newConv, error: convError } = await supabase
+        .from("conversations")
+        .insert({
+          seeker_id: user.id,
+          provider_id: service.provider_id,
+        })
+        .select("id")
+        .single()
+        
+      if (convError || !newConv) {
+        return { error: "Failed to initialize order context" }
+      }
+      conversationId = newConv.id
+    }
+
+    // 4. Create Order
+    const orderData = {
+      conversation_id: conversationId,
+      seeker_id: user.id,
+      provider_id: service.provider_id,
+      service_id: service.id,
+      service_name_ar: service.name_ar,
+      service_name_en: service.name_en,
+      service_description_ar: service.description_ar || "",
+      service_description_en: service.description_en || "",
+      amount_cents: fees.amountCents,
+      platform_fee_cents: fees.platformFeeCents,
+      provider_amount_cents: fees.providerAmountCents,
+      status: "pending",
+    }
+
+    const { data: order, error: orderError } = await supabase
+      .from("orders")
+      .insert(orderData)
+      .select()
+      .single()
+
+    if (orderError || !order) {
+      console.error("[v0] Database order error:", orderError)
+      return { error: `Failed to create order: ${orderError?.message}` }
+    }
+
+    return { orderId: order.id }
+  } catch (error) {
+    console.error("[v0] Unexpected error in direct order:", error)
+    return { error: "An unexpected error occurred" }
   }
 }

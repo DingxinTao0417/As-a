@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
+import { createDirectOrder, createCheckoutSession } from "@/app/actions/orders"
 import { useLanguage } from "@/components/language-provider"
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
@@ -16,18 +17,18 @@ import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
-  DollarSign,
-  Clock,
-  User,
-  Shield,
-  Zap,
-  FileCheck,
-  Send,
-  Pencil,
-  ThumbsUp,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  Send,
+  Pencil,
+  FileCheck,
+  ThumbsUp,
+  Zap,
+  Clock,
+  Shield,
+  User,
+  DollarSign,
 } from "lucide-react"
 
 // --- Types ---
@@ -84,6 +85,7 @@ type Review = {
   comment: string | null
   created_at: string
   service_name: string | null
+  reviewer_id: string
   profiles: {
     full_name: string | null
     avatar_url: string | null
@@ -146,14 +148,8 @@ export default function ServiceDetailPage() {
   const [user, setUser] = useState<any>(null)
   const [activeImage, setActiveImage] = useState(0)
 
-  // Review form state
-  const [canReview, setCanReview] = useState(false)
-  const [hasReviewed, setHasReviewed] = useState(false)
-  const [showReviewForm, setShowReviewForm] = useState(false)
-  const [reviewRating, setReviewRating] = useState(5)
-  const [reviewComment, setReviewComment] = useState("")
-  const [reviewHover, setReviewHover] = useState(0)
-  const [submittingReview, setSubmittingReview] = useState(false)
+  // Order state
+  const [isOrdering, setIsOrdering] = useState(false)
 
   useEffect(() => {
     async function fetchService() {
@@ -201,7 +197,7 @@ export default function ServiceDetailPage() {
       const { data: reviewsData } = await supabase
         .from("reviews")
         .select(`
-          id, rating, comment, created_at, service_name,
+          id, rating, comment, created_at, service_name, reviewer_id,
           profiles ( full_name, avatar_url )
         `)
         .eq("service_id", data.id)
@@ -210,72 +206,48 @@ export default function ServiceDetailPage() {
 
       setReviews((reviewsData as Review[]) || [])
 
-      // Check if current user can review (has paid/completed order for this service)
-      if (userData.user) {
-        const { data: eligibleOrder } = await supabase
-          .from("orders")
-          .select("id")
-          .eq("service_id", data.id)
-          .eq("seeker_id", userData.user.id)
-          .in("status", ["paid", "completed"])
-          .limit(1)
-
-        setCanReview((eligibleOrder && eligibleOrder.length > 0) || false)
-
-        // Check if already reviewed
-        const { data: existingReview } = await supabase
-          .from("reviews")
-          .select("id")
-          .eq("service_id", data.id)
-          .eq("reviewer_id", userData.user.id)
-          .limit(1)
-
-        setHasReviewed((existingReview && existingReview.length > 0) || false)
-      }
-
       setIsLoading(false)
     }
 
     fetchService()
   }, [params.id, router])
 
-  const handleSubmitReview = async () => {
-    if (!user || !service) return
-    setSubmittingReview(true)
-
-    const supabase = createClient()
-    const { error } = await supabase.from("reviews").insert({
-      service_id: service.id,
-      reviewer_id: user.id,
-      rating: reviewRating,
-      comment: reviewComment || null,
-      service_name: language === "ar" ? service.name_ar : service.name_en,
-    })
-
-    if (error) {
-      console.error("Error submitting review:", error)
-      setSubmittingReview(false)
-      return
-    }
-
-    // Refresh reviews
-    const { data: freshReviews } = await supabase
-      .from("reviews")
-      .select(`id, rating, comment, created_at, service_name, profiles ( full_name, avatar_url )`)
-      .eq("service_id", service.id)
-      .order("created_at", { ascending: false })
-      .limit(10)
-
-    setReviews((freshReviews as Review[]) || [])
-    setHasReviewed(true)
-    setShowReviewForm(false)
-    setSubmittingReview(false)
-    setReviewComment("")
-  }
-
   const handleContact = () => {
     if (!user) { router.push("/auth/login"); return }
     router.push(`/messages?provider=${service?.provider_id}`)
+  }
+
+  const handleOrderNow = async () => {
+    if (!user) { router.push("/auth/login"); return }
+    if (!service) return
+
+    setIsOrdering(true)
+    try {
+      // 1. Create a direct order and related conversation context
+      const { orderId, error: orderError } = await createDirectOrder(service.id)
+      
+      if (orderError || !orderId) {
+        alert(orderError || "Failed to create order")
+        setIsOrdering(false)
+        return
+      }
+
+      // 2. Create Stripe checkout session
+      const { url, error: stripeError } = await createCheckoutSession(orderId)
+
+      if (stripeError || !url) {
+        alert(stripeError || "Failed to initialize checkout")
+        setIsOrdering(false)
+        return
+      }
+
+      // 3. Redirect to Stripe checkout
+      window.location.href = url
+    } catch (error) {
+      console.error("Error creating direct order:", error)
+      alert("An unexpected error occurred")
+      setIsOrdering(false)
+    }
   }
 
   if (isLoading || !service) {
@@ -572,10 +544,17 @@ export default function ServiceDetailPage() {
                   <Button
                     size="lg"
                     className="w-full gap-2 text-base font-semibold mt-2"
-                    onClick={handleContact}
+                    onClick={handleOrderNow}
+                    disabled={isOrdering}
                   >
-                    {t("اطلب الآن", "Order Now")} ({service.price} {t("ر.س", "SAR")})
-                    <ArrowRight className="h-4 w-4" />
+                    {isOrdering ? (
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+                    ) : (
+                      <>
+                        {t("اطلب الآن", "Order Now")} ({service.price} {t("ر.س", "SAR")})
+                        <ArrowRight className="h-4 w-4" />
+                      </>
+                    )}
                   </Button>
                   <p className="text-xs text-center text-muted-foreground">{t("لن يتم الخصم إلا بعد موافقتك", "You won't be charged until you approve")}</p>
                 </div>
@@ -621,76 +600,7 @@ export default function ServiceDetailPage() {
               <div className="mt-12 pt-10 border-t">
                 <div className="flex items-center justify-between mb-8">
                   <h2 className="text-2xl font-bold">{t("آراء العملاء", "What Clients Are Saying")}</h2>
-                  {canReview && !hasReviewed && (
-                    <Button onClick={() => setShowReviewForm(!showReviewForm)} className="gap-2">
-                      <Star className="h-4 w-4" />
-                      {t("اكتب تقييماً", "Write a Review")}
-                    </Button>
-                  )}
-                  {hasReviewed && (
-                    <Badge variant="secondary" className="gap-1">
-                      <CheckCircle2 className="h-3 w-3" />
-                      {t("تم التقييم", "Reviewed")}
-                    </Badge>
-                  )}
                 </div>
-
-                {/* Write Review Form */}
-                {showReviewForm && (
-                  <Card className="p-6 shadow-sm mb-8 border-primary/20">
-                    <h3 className="font-bold mb-4">{t("أضف تقييمك", "Add Your Review")}</h3>
-                    <div className="space-y-4">
-                      {/* Star Selector */}
-                      <div>
-                        <label className="text-sm font-medium mb-2 block">{t("التقييم", "Rating")}</label>
-                        <div className="flex items-center gap-1">
-                          {[1, 2, 3, 4, 5].map((star) => (
-                            <button
-                              key={star}
-                              type="button"
-                              onClick={() => setReviewRating(star)}
-                              onMouseEnter={() => setReviewHover(star)}
-                              onMouseLeave={() => setReviewHover(0)}
-                              className="cursor-pointer p-0.5 transition-transform hover:scale-110"
-                            >
-                              <Star className={`h-8 w-8 ${
-                                star <= (reviewHover || reviewRating)
-                                  ? "fill-yellow-400 text-yellow-400"
-                                  : "fill-muted text-muted"
-                              }`} />
-                            </button>
-                          ))}
-                          <span className="ml-2 text-sm text-muted-foreground">{reviewRating}/5</span>
-                        </div>
-                      </div>
-                      {/* Comment */}
-                      <div>
-                        <label className="text-sm font-medium mb-2 block">{t("تعليقك (اختياري)", "Your Comment (optional)")}</label>
-                        <textarea
-                          value={reviewComment}
-                          onChange={(e) => setReviewComment(e.target.value)}
-                          placeholder={t("شارك تجربتك مع هذه الخدمة...", "Share your experience with this service...")}
-                          rows={3}
-                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        />
-                      </div>
-                      {/* Submit */}
-                      <div className="flex gap-3">
-                        <Button onClick={handleSubmitReview} disabled={submittingReview} className="gap-2">
-                          {submittingReview ? (
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-                          ) : (
-                            <Send className="h-4 w-4" />
-                          )}
-                          {t("إرسال التقييم", "Submit Review")}
-                        </Button>
-                        <Button variant="outline" onClick={() => setShowReviewForm(false)}>
-                          {t("إلغاء", "Cancel")}
-                        </Button>
-                      </div>
-                    </div>
-                  </Card>
-                )}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   {/* Rating Summary */}
                   <Card className="p-6 shadow-sm">

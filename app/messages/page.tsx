@@ -1111,12 +1111,17 @@ export default function MessagesPage() {
                                   </span>
 
                                   {/* Seeker buttons */}
+                                  {/* Seeker buttons */}
                                   {order.seeker_id === user.id && (
                                     <div className="flex gap-2">
                                       {order.status === "pending" && (
                                         <Button
                                           size="sm"
-                                          onClick={() => handlePayment(order.id)}
+                                          onClick={(e) => {
+                                            e.preventDefault()
+                                            e.stopPropagation()
+                                            handlePayment(order.id)
+                                          }}
                                           disabled={processingPayment}
                                           className="gap-2"
                                         >
@@ -1129,7 +1134,11 @@ export default function MessagesPage() {
                                       {order.status === "awaiting_confirmation" && (
                                         <Button
                                           size="sm"
-                                          onClick={() => handleConfirmOrder(order.id)}
+                                          onClick={(e) => {
+                                            e.preventDefault()
+                                            e.stopPropagation()
+                                            handleConfirmOrder(order.id)
+                                          }}
                                           disabled={processingConfirmation}
                                           className="gap-2"
                                         >
@@ -1143,7 +1152,11 @@ export default function MessagesPage() {
                                         <Button
                                           size="sm"
                                           variant="outline"
-                                          onClick={() => router.push("/history")}
+                                          onClick={(e) => {
+                                            e.preventDefault()
+                                            e.stopPropagation()
+                                            router.push("/history")
+                                          }}
                                           className="gap-2"
                                         >
                                           <Eye className="h-4 w-4" />
@@ -1160,7 +1173,11 @@ export default function MessagesPage() {
                                         <Button
                                           size="sm"
                                           variant="outline"
-                                          onClick={() => handleCompleteOrder(order.id)}
+                                          onClick={(e) => {
+                                            e.preventDefault()
+                                            e.stopPropagation()
+                                            handleCompleteOrder(order.id)
+                                          }}
                                           className="gap-2"
                                         >
                                           <CheckCircle className="h-4 w-4" />
@@ -1171,7 +1188,11 @@ export default function MessagesPage() {
                                         <Button
                                           size="sm"
                                           variant="outline"
-                                          onClick={() => router.push("/dashboard")}
+                                          onClick={(e) => {
+                                            e.preventDefault()
+                                            e.stopPropagation()
+                                            router.push("/dashboard")
+                                          }}
                                           className="gap-2"
                                         >
                                           <Eye className="h-4 w-4" />
