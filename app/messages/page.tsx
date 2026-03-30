@@ -412,26 +412,9 @@ export default function MessagesPage() {
 
       if (result.url) {
         console.log("[v0] Stripe checkout URL received:", result.url)
-
-        // Try to open in a new tab first (more reliable)
-        const newWindow = window.open(result.url, "_blank")
-
-        // If popup blocker prevented opening, fallback to current window
-        if (!newWindow || newWindow.closed || typeof newWindow.closed === "undefined") {
-          console.log("[v0] Popup blocked, redirecting in current window")
-          // Show a message and redirect after a short delay
-          if (
-            confirm(
-              language === "ar"
-                ? "سيتم توجيهك إلى صفحة الدفع. انقر موافق للمتابعة."
-                : "You will be redirected to the payment page. Click OK to continue.",
-            )
-          ) {
-            window.location.href = result.url
-          }
-        } else {
-          console.log("[v0] Successfully opened Stripe checkout in new tab")
-        }
+        // Redirect to Stripe checkout in the same window
+        // This ensures proper redirect back after payment completes
+        window.location.href = result.url
       }
     } catch (error) {
       console.error("[v0] Payment error:", error)
