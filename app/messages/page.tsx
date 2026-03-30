@@ -391,6 +391,29 @@ export default function MessagesPage() {
         return
       }
 
+      // Check for pending orders with checkout session and verify their payment status
+      const pendingOrdersWithSession = (data || []).filter(
+        (order: Order) => order.status === "pending" && order.stripe_checkout_session_id
+      )
+      
+      if (pendingOrdersWithSession.length > 0) {
+        console.log("[v0] Found pending orders with checkout session, verifying payment...")
+        for (const order of pendingOrdersWithSession) {
+          const result = await verifyAndUpdatePayment(order.id)
+          if (result.success && result.status !== "pending") {
+            console.log("[v0] Order payment verified and updated:", order.id, result.status)
+            // Refresh orders after update
+            const { data: refreshedData } = await supabase
+              .from("orders")
+              .select("*")
+              .eq("conversation_id", conversationId)
+              .order("created_at", { ascending: true })
+            setOrders(refreshedData || [])
+            return
+          }
+        }
+      }
+
       setOrders(data || [])
     } catch (error) {
       console.error("[v0] Error fetching orders:", error)
