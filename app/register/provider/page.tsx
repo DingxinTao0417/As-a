@@ -80,12 +80,30 @@ export default function BecomeProviderPage() {
         return
       }
 
-      // Check user's role - seeker users need to go through the registration flow
+      // Check user's role - seeker users need to see introduction page first
       const { data: profile } = await supabase
         .from("profiles")
         .select("role")
         .eq("id", user.id)
         .single()
+
+      // If user is a seeker, show a confirmation before allowing registration
+      if (profile?.role === "seeker") {
+        // Check if user came from the introduction page (via referrer or session)
+        const cameFromIntro = sessionStorage.getItem("provider_intro_seen")
+        if (!cameFromIntro) {
+          // Redirect to introduction page first
+          toast({
+            title: t("مرحباً بك!", "Welcome!"),
+            description: t(
+              "يرجى الاطلاع على معلومات مقدمي الخدمة أولاً",
+              "Please review provider information first"
+            ),
+          })
+          router.push("/services/provider")
+          return
+        }
+      }
 
       setUser(user)
       setFormData((prev) => ({
