@@ -476,16 +476,22 @@ export default function MessagesPage() {
       const nonArchivedSeekerConvs = seekerConvs?.filter((c: any) => !c.is_archived_by_seeker) || []
       console.log("[v0] Non-archived seeker conversations:", nonArchivedSeekerConvs.length)
 
-      const { data: providerProfile } = await supabase.from("providers").select("id").eq("user_id", userId).single()
+      // Get ALL provider profiles for this user (user may have multiple)
+      const { data: providerProfiles } = await supabase.from("providers").select("id").eq("user_id", userId)
 
-      console.log("[v0] Provider profile exists:", !!providerProfile)
-      if (providerProfile) {
-        console.log("[v0] Provider profile ID:", providerProfile.id)
+      console.log("[v0] Provider profiles found:", providerProfiles?.length || 0)
+      if (providerProfiles && providerProfiles.length > 0) {
+        console.log("[v0] Provider profile IDs:", providerProfiles.map((p: any) => p.id))
       }
 
       let nonArchivedProviderConvs: any[] = []
-      if (providerProfile) {
-        const { data: pConvs } = await supabase.from("conversations").select("*").eq("provider_id", providerProfile.id)
+      if (providerProfiles && providerProfiles.length > 0) {
+        // Query conversations for ALL provider profiles
+        const providerIds = providerProfiles.map((p: any) => p.id)
+        const { data: pConvs } = await supabase
+          .from("conversations")
+          .select("*")
+          .in("provider_id", providerIds)
 
         console.log("[v0] ALL provider conversations (before archive filter):", pConvs?.length || 0)
         if (pConvs && pConvs.length > 0) {
@@ -493,6 +499,7 @@ export default function MessagesPage() {
             "[v0] Provider conversations details:",
             pConvs.map((c: any) => ({
               id: c.id,
+              provider_id: c.provider_id,
               is_archived_by_seeker: c.is_archived_by_seeker,
               is_archived_by_provider: c.is_archived_by_provider,
             })),
