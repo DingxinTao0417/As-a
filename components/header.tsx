@@ -92,9 +92,12 @@ export function Header() {
                 <DropdownMenuItem asChild>
                   <Link href="/services/seeker">{t("تصفح المحترفين", "Browse Professionals")}</Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/services/provider">{t("كن مقدم خدمة", "Become a Provider")}</Link>
-                </DropdownMenuItem>
+                {/* Only show "Become a Provider" for non-seeker users */}
+                {userRole !== "seeker" && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/services/provider">{t("كن مقدم خدمة", "Become a Provider")}</Link>
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -203,9 +206,12 @@ export function Header() {
               <Link href="/services/seeker" className="text-sm font-medium hover:text-primary transition-colors">
                 {t("تصفح المحترفين", "Browse Professionals")}
               </Link>
-              <Link href="/services/provider" className="text-sm font-medium hover:text-primary transition-colors">
-                {t("كن مقدم خدمة", "Become a Provider")}
-              </Link>
+              {/* Only show "Become a Provider" for non-seeker users */}
+              {userRole !== "seeker" && (
+                <Link href="/services/provider" className="text-sm font-medium hover:text-primary transition-colors">
+                  {t("كن مقدم خدمة", "Become a Provider")}
+                </Link>
+              )}
               <Link href="/about" className="text-sm font-medium hover:text-primary transition-colors">
                 {t("من نحن", "About")}
               </Link>

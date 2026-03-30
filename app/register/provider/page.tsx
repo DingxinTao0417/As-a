@@ -80,29 +80,25 @@ export default function BecomeProviderPage() {
         return
       }
 
-      // Check user's role - seeker users need to see introduction page first
+      // Check user's role - seeker users cannot become providers
       const { data: profile } = await supabase
         .from("profiles")
         .select("role")
         .eq("id", user.id)
         .single()
 
-      // If user is a seeker, show a confirmation before allowing registration
+      // If user is a seeker, they cannot register as a provider
       if (profile?.role === "seeker") {
-        // Check if user came from the introduction page (via referrer or session)
-        const cameFromIntro = sessionStorage.getItem("provider_intro_seen")
-        if (!cameFromIntro) {
-          // Redirect to introduction page first
-          toast({
-            title: t("مرحباً بك!", "Welcome!"),
-            description: t(
-              "يرجى الاطلاع على معلومات مقدمي الخدمة أولاً",
-              "Please review provider information first"
-            ),
-          })
-          router.push("/services/provider")
-          return
-        }
+        toast({
+          title: t("غير مسموح", "Not Allowed"),
+          description: t(
+            "حسابات الباحثين عن خدمات لا يمكنها تقديم خدمات. يرجى إنشاء حساب مقدم خدمة جديد.",
+            "Seeker accounts cannot offer services. Please create a new provider account."
+          ),
+          variant: "destructive",
+        })
+        router.push("/")
+        return
       }
 
       setUser(user)
