@@ -19,7 +19,7 @@ import {
   CheckCircle,
   Eye,
 } from "lucide-react"
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Avatar } from "@/components/ui/avatar"
@@ -37,6 +37,7 @@ import {
 import { CreateOrderDialog } from "@/components/create-order-dialog"
 import { createCheckoutSession, completeOrder, confirmOrder } from "@/app/actions/orders"
 import { formatCurrency } from "@/lib/stripe"
+import type { RealtimeChannel } from "@supabase/supabase-js"
 
 type Conversation = {
   id: string
@@ -94,9 +95,27 @@ export default function MessagesPage() {
   const [showCreateOrder, setShowCreateOrder] = useState(false)
   const [processingPayment, setProcessingPayment] = useState(false)
   const [processingConfirmation, setProcessingConfirmation] = useState(false)
+  
+  // Realtime subscriptions
+  const messagesChannelRef = useRef<RealtimeChannel | null>(null)
+  const conversationsChannelRef = useRef<RealtimeChannel | null>(null)
+  const ordersChannelRef = useRef<RealtimeChannel | null>(null)
 
   useEffect(() => {
     checkAuthAndFetchData()
+    
+    // Cleanup subscriptions on unmount
+    return () => {
+      if (messagesChannelRef.current) {
+        messagesChannelRef.current.unsubscribe()
+      }
+      if (conversationsChannelRef.current) {
+        conversationsChannelRef.current.unsubscribe()
+      }
+      if (ordersChannelRef.current) {
+        ordersChannelRef.current.unsubscribe()
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -106,18 +125,179 @@ export default function MessagesPage() {
     }
   }, [searchParams, user])
 
+  // Setup Realtime subscription for messages when conversation is selected
   useEffect(() => {
-    if (selectedConversation) {
+    if (selectedConversation && user) {
       fetchMessages(selectedConversation)
       fetchOrders(selectedConversation)
-
-      const interval = setInterval(() => {
-        fetchMessages(selectedConversation)
-        fetchOrders(selectedConversation)
-      }, 3000)
-      return () => clearInterval(interval)
+      
+      // Setup realtime subscription for messages
+      setupMessagesRealtime(selectedConversation)
+      setupOrdersRealtime(selectedConversation)
     }
-  }, [selectedConversation])
+    
+    return () => {
+      if (messagesChannelRef.current) {
+        messagesChannelRef.current.unsubscribe()
+        messagesChannelRef.current = null
+      }
+      if (ordersChannelRef.current) {
+        ordersChannelRef.current.unsubscribe()
+        ordersChannelRef.current = null
+      }
+    }
+  }, [selectedConversation, user])
+  
+  // Setup Realtime subscription for conversations
+  useEffect(() => {
+    if (user) {
+      setupConversationsRealtime()
+    }
+    
+    return () => {
+      if (conversationsChannelRef.current) {
+        conversationsChannelRef.current.unsubscribe()
+        conversationsChannelRef.current = null
+      }
+    }
+  }, [user])
+  
+  const setupMessagesRealtime = useCallback((conversationId: string) => {
+    const supabase = createClient()
+    
+    // Unsubscribe from previous channel if exists
+    if (messagesChannelRef.current) {
+      messagesChannelRef.current.unsubscribe()
+    }
+    
+    console.log("[v0] Setting up Realtime subscription for messages in conversation:", conversationId)
+    
+    messagesChannelRef.current = supabase
+      .channel(`messages:${conversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`
+        },
+        (payload) => {
+          console.log("[v0] Realtime: New message received:", payload.new)
+          const newMsg = payload.new as Message
+          setMessages(prev => {
+            // Avoid duplicates
+            if (prev.some(m => m.id === newMsg.id)) {
+              return prev
+            }
+            return [...prev, newMsg]
+          })
+          
+          // Auto-scroll to bottom
+          setTimeout(() => {
+            if (messagesContainerRef.current) {
+              messagesContainerRef.current.scrollTo({
+                top: messagesContainerRef.current.scrollHeight,
+                behavior: "smooth",
+              })
+            }
+          }, 100)
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`
+        },
+        (payload) => {
+          console.log("[v0] Realtime: Message updated:", payload.new)
+          const updatedMsg = payload.new as Message
+          setMessages(prev => prev.map(m => m.id === updatedMsg.id ? updatedMsg : m))
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`
+        },
+        (payload) => {
+          console.log("[v0] Realtime: Message deleted:", payload.old)
+          const deletedMsg = payload.old as Message
+          setMessages(prev => prev.filter(m => m.id !== deletedMsg.id))
+        }
+      )
+      .subscribe((status) => {
+        console.log("[v0] Messages Realtime subscription status:", status)
+      })
+  }, [])
+  
+  const setupConversationsRealtime = useCallback(() => {
+    if (!user) return
+    
+    const supabase = createClient()
+    
+    // Unsubscribe from previous channel if exists
+    if (conversationsChannelRef.current) {
+      conversationsChannelRef.current.unsubscribe()
+    }
+    
+    console.log("[v0] Setting up Realtime subscription for conversations")
+    
+    conversationsChannelRef.current = supabase
+      .channel('conversations')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversations'
+        },
+        (payload) => {
+          console.log("[v0] Realtime: Conversation change detected:", payload.eventType, payload)
+          // Refresh conversations list
+          fetchConversations(user.id)
+        }
+      )
+      .subscribe((status) => {
+        console.log("[v0] Conversations Realtime subscription status:", status)
+      })
+  }, [user])
+  
+  const setupOrdersRealtime = useCallback((conversationId: string) => {
+    const supabase = createClient()
+    
+    // Unsubscribe from previous channel if exists
+    if (ordersChannelRef.current) {
+      ordersChannelRef.current.unsubscribe()
+    }
+    
+    console.log("[v0] Setting up Realtime subscription for orders in conversation:", conversationId)
+    
+    ordersChannelRef.current = supabase
+      .channel(`orders:${conversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'orders',
+          filter: `conversation_id=eq.${conversationId}`
+        },
+        (payload) => {
+          console.log("[v0] Realtime: Order change detected:", payload.eventType, payload)
+          fetchOrders(conversationId)
+        }
+      )
+      .subscribe((status) => {
+        console.log("[v0] Orders Realtime subscription status:", status)
+      })
+  }, [])
 
   const checkAuthAndFetchData = async () => {
     const supabase = createClient()
@@ -399,15 +579,39 @@ export default function MessagesPage() {
     try {
       console.log("[v0] Creating/opening conversation with provider:", providerId)
 
-      const { data: existing } = await supabase
+      const { data: existing, error: queryError } = await supabase
         .from("conversations")
         .select("*")
         .eq("seeker_id", user.id)
         .eq("provider_id", providerId)
         .single()
 
+      console.log("[v0] Existing conversation query result:", existing, "Error:", queryError)
+
       if (existing) {
         console.log("[v0] Found existing conversation:", existing.id)
+        console.log("[v0] Conversation archived status:", {
+          is_archived_by_seeker: existing.is_archived_by_seeker,
+          is_archived_by_provider: existing.is_archived_by_provider,
+        })
+
+        if (existing.is_archived_by_seeker) {
+          console.log("[v0] Unarchiving conversation for seeker")
+          const { error: updateError } = await supabase
+            .from("conversations")
+            .update({
+              is_archived_by_seeker: false,
+              last_message_at: new Date().toISOString(),
+            })
+            .eq("id", existing.id)
+
+          if (updateError) {
+            console.error("[v0] Error unarchiving conversation:", updateError)
+          } else {
+            console.log("[v0] Successfully unarchived conversation")
+          }
+        }
+
         setSelectedConversation(existing.id)
         await fetchConversations(user.id)
       } else {
