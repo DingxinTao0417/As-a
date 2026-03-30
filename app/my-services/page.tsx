@@ -8,11 +8,12 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { useLanguage } from "@/components/language-provider"
-import { Plus, Edit2, Trash2, Save, X, Briefcase } from "lucide-react"
+import { Plus, Edit2, Trash2, Save, Briefcase, Clock, DollarSign } from "lucide-react"
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
+import { Badge } from "@/components/ui/badge"
 import {
   Dialog,
   DialogContent,
@@ -43,13 +44,13 @@ type Service = {
   id: string
   name_ar: string
   name_en: string
-  title_ar: string
-  title_en: string
-  bio_ar: string
-  bio_en: string
+  description_ar: string | null
+  description_en: string | null
   category: string
-  starting_price: number
-  hourly_rate: number
+  price: number
+  price_type: string
+  delivery_time: string | null
+  features: string[]
   is_active: boolean
   created_at: string
 }
@@ -65,11 +66,18 @@ const categories = [
   { value: "consulting", label_ar: "الاستشارات", label_en: "Consulting" },
 ]
 
+const priceTypes = [
+  { value: "fixed", label_ar: "سعر ثابت", label_en: "Fixed Price" },
+  { value: "hourly", label_ar: "بالساعة", label_en: "Per Hour" },
+  { value: "starting_from", label_ar: "يبدأ من", label_en: "Starting From" },
+]
+
 export default function MyServicesPage() {
   const { t, language } = useLanguage()
   const router = useRouter()
   const { toast } = useToast()
   const [user, setUser] = useState<any>(null)
+  const [providerId, setProviderId] = useState<string | null>(null)
   const [services, setServices] = useState<Service[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
@@ -77,17 +85,18 @@ export default function MyServicesPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [selectedService, setSelectedService] = useState<Service | null>(null)
   const [isSaving, setIsSaving] = useState(false)
-  
+  const [featureInput, setFeatureInput] = useState("")
+
   const [formData, setFormData] = useState({
     name_ar: "",
     name_en: "",
-    title_ar: "",
-    title_en: "",
-    bio_ar: "",
-    bio_en: "",
+    description_ar: "",
+    description_en: "",
     category: "",
-    starting_price: "",
-    hourly_rate: "",
+    price: "",
+    price_type: "fixed",
+    delivery_time: "",
+    features: [] as string[],
   })
 
   useEffect(() => {
@@ -120,17 +129,35 @@ export default function MyServicesPage() {
       return
     }
 
+    // Get provider ID
+    const { data: provider } = await supabase
+      .from("providers")
+      .select("id")
+      .eq("user_id", user.id)
+      .single()
+
+    if (!provider) {
+      toast({
+        title: t("خطأ", "Error"),
+        description: t("لم يتم العثور على ملف مقدم الخدمة", "Provider profile not found"),
+        variant: "destructive",
+      })
+      router.push("/register/provider")
+      return
+    }
+
     setUser(user)
-    await fetchServices(user.id)
+    setProviderId(provider.id)
+    await fetchServices(provider.id)
     setIsLoading(false)
   }
 
-  const fetchServices = async (userId: string) => {
+  const fetchServices = async (provId: string) => {
     const supabase = createClient()
     const { data, error } = await supabase
-      .from("providers")
+      .from("services")
       .select("*")
-      .eq("user_id", userId)
+      .eq("provider_id", provId)
       .order("created_at", { ascending: false })
 
     if (error) {
@@ -145,39 +172,61 @@ export default function MyServicesPage() {
     setFormData({
       name_ar: "",
       name_en: "",
-      title_ar: "",
-      title_en: "",
-      bio_ar: "",
-      bio_en: "",
+      description_ar: "",
+      description_en: "",
       category: "",
-      starting_price: "",
-      hourly_rate: "",
+      price: "",
+      price_type: "fixed",
+      delivery_time: "",
+      features: [],
     })
+    setFeatureInput("")
+  }
+
+  const addFeature = () => {
+    if (featureInput.trim() && !formData.features.includes(featureInput.trim())) {
+      setFormData({ ...formData, features: [...formData.features, featureInput.trim()] })
+      setFeatureInput("")
+    }
+  }
+
+  const removeFeature = (feature: string) => {
+    setFormData({ ...formData, features: formData.features.filter((f) => f !== feature) })
   }
 
   const handleCreate = async () => {
-    if (!user) return
+    if (!providerId) return
+
+    if (!formData.name_ar || !formData.name_en || !formData.category || !formData.price) {
+      toast({
+        title: t("خطأ", "Error"),
+        description: t("يرجى ملء الحقول المطلوبة", "Please fill in required fields"),
+        variant: "destructive",
+      })
+      return
+    }
 
     setIsSaving(true)
     const supabase = createClient()
 
-    const { error } = await supabase.from("providers").insert({
-      user_id: user.id,
+    const { error } = await supabase.from("services").insert({
+      provider_id: providerId,
       name_ar: formData.name_ar,
       name_en: formData.name_en,
-      title_ar: formData.title_ar,
-      title_en: formData.title_en,
-      bio_ar: formData.bio_ar,
-      bio_en: formData.bio_en,
+      description_ar: formData.description_ar || null,
+      description_en: formData.description_en || null,
       category: formData.category,
-      starting_price: parseFloat(formData.starting_price) || 0,
-      hourly_rate: parseFloat(formData.hourly_rate) || 0,
+      price: parseFloat(formData.price) || 0,
+      price_type: formData.price_type,
+      delivery_time: formData.delivery_time || null,
+      features: formData.features,
       is_active: true,
     })
 
     setIsSaving(false)
 
     if (error) {
+      console.error("[v0] Error creating service:", error)
       toast({
         title: t("خطأ", "Error"),
         description: t("فشل في إنشاء الخدمة", "Failed to create service"),
@@ -193,27 +242,27 @@ export default function MyServicesPage() {
 
     setShowCreateDialog(false)
     resetForm()
-    await fetchServices(user.id)
+    await fetchServices(providerId)
   }
 
   const handleEdit = async () => {
-    if (!user || !selectedService) return
+    if (!providerId || !selectedService) return
 
     setIsSaving(true)
     const supabase = createClient()
 
     const { error } = await supabase
-      .from("providers")
+      .from("services")
       .update({
         name_ar: formData.name_ar,
         name_en: formData.name_en,
-        title_ar: formData.title_ar,
-        title_en: formData.title_en,
-        bio_ar: formData.bio_ar,
-        bio_en: formData.bio_en,
+        description_ar: formData.description_ar || null,
+        description_en: formData.description_en || null,
         category: formData.category,
-        starting_price: parseFloat(formData.starting_price) || 0,
-        hourly_rate: parseFloat(formData.hourly_rate) || 0,
+        price: parseFloat(formData.price) || 0,
+        price_type: formData.price_type,
+        delivery_time: formData.delivery_time || null,
+        features: formData.features,
       })
       .eq("id", selectedService.id)
 
@@ -236,16 +285,16 @@ export default function MyServicesPage() {
     setShowEditDialog(false)
     setSelectedService(null)
     resetForm()
-    await fetchServices(user.id)
+    await fetchServices(providerId)
   }
 
   const handleDelete = async () => {
-    if (!user || !selectedService) return
+    if (!providerId || !selectedService) return
 
     const supabase = createClient()
 
     const { error } = await supabase
-      .from("providers")
+      .from("services")
       .delete()
       .eq("id", selectedService.id)
 
@@ -265,7 +314,7 @@ export default function MyServicesPage() {
 
     setShowDeleteDialog(false)
     setSelectedService(null)
-    await fetchServices(user.id)
+    await fetchServices(providerId)
   }
 
   const openEditDialog = (service: Service) => {
@@ -273,13 +322,13 @@ export default function MyServicesPage() {
     setFormData({
       name_ar: service.name_ar || "",
       name_en: service.name_en || "",
-      title_ar: service.title_ar || "",
-      title_en: service.title_en || "",
-      bio_ar: service.bio_ar || "",
-      bio_en: service.bio_en || "",
+      description_ar: service.description_ar || "",
+      description_en: service.description_en || "",
       category: service.category || "",
-      starting_price: service.starting_price?.toString() || "",
-      hourly_rate: service.hourly_rate?.toString() || "",
+      price: service.price?.toString() || "",
+      price_type: service.price_type || "fixed",
+      delivery_time: service.delivery_time || "",
+      features: service.features || [],
     })
     setShowEditDialog(true)
   }
@@ -293,6 +342,130 @@ export default function MyServicesPage() {
     const cat = categories.find(c => c.value === value)
     return cat ? (language === "ar" ? cat.label_ar : cat.label_en) : value
   }
+
+  const getPriceTypeLabel = (value: string) => {
+    const pt = priceTypes.find(p => p.value === value)
+    return pt ? (language === "ar" ? pt.label_ar : pt.label_en) : value
+  }
+
+  // Shared form fields for create/edit dialogs
+  const renderFormFields = () => (
+    <div className="grid gap-4 py-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>{t("اسم الخدمة (عربي)", "Service Name (Arabic)")} *</Label>
+          <Input
+            value={formData.name_ar}
+            onChange={(e) => setFormData({ ...formData, name_ar: e.target.value })}
+            placeholder={t("مثال: تصميم شعار احترافي", "e.g., Professional Logo Design")}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>{t("اسم الخدمة (إنجليزي)", "Service Name (English)")} *</Label>
+          <Input
+            value={formData.name_en}
+            onChange={(e) => setFormData({ ...formData, name_en: e.target.value })}
+            placeholder="e.g., Professional Logo Design"
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>{t("الوصف (عربي)", "Description (Arabic)")}</Label>
+          <Textarea
+            value={formData.description_ar}
+            onChange={(e) => setFormData({ ...formData, description_ar: e.target.value })}
+            placeholder={t("وصف تفصيلي لخدمتك", "Detailed description of your service")}
+            rows={3}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>{t("الوصف (إنجليزي)", "Description (English)")}</Label>
+          <Textarea
+            value={formData.description_en}
+            onChange={(e) => setFormData({ ...formData, description_en: e.target.value })}
+            placeholder="Detailed description of your service"
+            rows={3}
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>{t("التصنيف", "Category")} *</Label>
+          <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v })}>
+            <SelectTrigger>
+              <SelectValue placeholder={t("اختر التصنيف", "Select category")} />
+            </SelectTrigger>
+            <SelectContent>
+              {categories.map((cat) => (
+                <SelectItem key={cat.value} value={cat.value}>
+                  {language === "ar" ? cat.label_ar : cat.label_en}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>{t("نوع التسعير", "Pricing Type")}</Label>
+          <Select value={formData.price_type} onValueChange={(v) => setFormData({ ...formData, price_type: v })}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {priceTypes.map((pt) => (
+                <SelectItem key={pt.value} value={pt.value}>
+                  {language === "ar" ? pt.label_ar : pt.label_en}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>{t("السعر (ر.س)", "Price (SAR)")} *</Label>
+          <Input
+            type="number"
+            value={formData.price}
+            onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+            placeholder="0"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>{t("وقت التسليم", "Delivery Time")}</Label>
+          <Input
+            value={formData.delivery_time}
+            onChange={(e) => setFormData({ ...formData, delivery_time: e.target.value })}
+            placeholder={t("مثال: 3-5 أيام", "e.g., 3-5 days")}
+          />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Label>{t("المميزات المتضمنة", "Included Features")}</Label>
+        <div className="flex gap-2">
+          <Input
+            value={featureInput}
+            onChange={(e) => setFeatureInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addFeature())}
+            placeholder={t("مثال: مراجعتان مجانيتان", "e.g., 2 free revisions")}
+          />
+          <Button type="button" onClick={addFeature} size="icon" variant="outline">
+            <Plus className="h-4 w-4" />
+          </Button>
+        </div>
+        {formData.features.length > 0 && (
+          <div className="flex flex-wrap gap-2 mt-2">
+            {formData.features.map((feature, idx) => (
+              <Badge key={idx} variant="secondary" className="gap-1 cursor-pointer" onClick={() => removeFeature(feature)}>
+                {feature}
+                <span className="text-destructive">×</span>
+              </Badge>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
 
   if (isLoading) {
     return (
@@ -345,17 +518,15 @@ export default function MyServicesPage() {
               <Card key={service.id} className="relative">
                 <CardHeader>
                   <div className="flex items-start justify-between">
-                    <div>
+                    <div className="flex-1">
                       <CardTitle className="text-lg">
-                        {language === "ar" ? service.title_ar : service.title_en}
-                      </CardTitle>
-                      <p className="text-sm text-muted-foreground mt-1">
                         {language === "ar" ? service.name_ar : service.name_en}
-                      </p>
+                      </CardTitle>
+                      <Badge variant="secondary" className="mt-2 text-xs">{getCategoryLabel(service.category)}</Badge>
                     </div>
                     <div className={`px-2 py-1 rounded-full text-xs ${
-                      service.is_active 
-                        ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300" 
+                      service.is_active
+                        ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
                         : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
                     }`}>
                       {service.is_active ? t("نشط", "Active") : t("غير نشط", "Inactive")}
@@ -363,33 +534,34 @@ export default function MyServicesPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm text-muted-foreground line-clamp-3 mb-4">
-                    {language === "ar" ? service.bio_ar : service.bio_en}
+                  <p className="text-sm text-muted-foreground line-clamp-2 mb-4">
+                    {language === "ar" ? service.description_ar : service.description_en}
                   </p>
                   <div className="flex items-center gap-4 text-sm mb-4">
-                    <span className="text-muted-foreground">
-                      {t("التصنيف:", "Category:")} {getCategoryLabel(service.category)}
-                    </span>
+                    <div className="flex items-center gap-1">
+                      <DollarSign className="h-4 w-4 text-primary" />
+                      <span className="font-bold text-primary">{service.price} {t("ر.س", "SAR")}</span>
+                      <span className="text-xs text-muted-foreground">({getPriceTypeLabel(service.price_type)})</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-4 text-sm mb-4">
-                    {service.starting_price > 0 && (
-                      <span>
-                        {t("يبدأ من:", "Starting:")} ${service.starting_price}
-                      </span>
-                    )}
-                    {service.hourly_rate > 0 && (
-                      <span>
-                        {t("بالساعة:", "Hourly:")} ${service.hourly_rate}
-                      </span>
-                    )}
-                  </div>
+                  {service.delivery_time && (
+                    <div className="flex items-center gap-1 text-sm text-muted-foreground mb-4">
+                      <Clock className="h-3.5 w-3.5" />
+                      <span>{service.delivery_time}</span>
+                    </div>
+                  )}
+                  {service.features && service.features.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-4">
+                      {service.features.slice(0, 3).map((f, idx) => (
+                        <Badge key={idx} variant="outline" className="text-xs">{f}</Badge>
+                      ))}
+                      {service.features.length > 3 && (
+                        <Badge variant="outline" className="text-xs">+{service.features.length - 3}</Badge>
+                      )}
+                    </div>
+                  )}
                   <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1"
-                      onClick={() => openEditDialog(service)}
-                    >
+                    <Button variant="outline" size="sm" className="flex-1" onClick={() => openEditDialog(service)}>
                       <Edit2 className="h-4 w-4 mr-2" />
                       {t("تعديل", "Edit")}
                     </Button>
@@ -410,7 +582,7 @@ export default function MyServicesPage() {
       </main>
       <Footer />
 
-      {/* Create Service Dialog */}
+      {/* Create Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -419,99 +591,7 @@ export default function MyServicesPage() {
               {t("أدخل تفاصيل الخدمة التي تريد تقديمها", "Enter the details of the service you want to offer")}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>{t("الاسم (عربي)", "Name (Arabic)")}</Label>
-                <Input
-                  value={formData.name_ar}
-                  onChange={(e) => setFormData({ ...formData, name_ar: e.target.value })}
-                  placeholder={t("اسمك بالعربية", "Your name in Arabic")}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>{t("الاسم (إنجليزي)", "Name (English)")}</Label>
-                <Input
-                  value={formData.name_en}
-                  onChange={(e) => setFormData({ ...formData, name_en: e.target.value })}
-                  placeholder="Your name in English"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>{t("العنوان (عربي)", "Title (Arabic)")}</Label>
-                <Input
-                  value={formData.title_ar}
-                  onChange={(e) => setFormData({ ...formData, title_ar: e.target.value })}
-                  placeholder={t("مثال: مطور ويب", "e.g., Web Developer")}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>{t("العنوان (إنجليزي)", "Title (English)")}</Label>
-                <Input
-                  value={formData.title_en}
-                  onChange={(e) => setFormData({ ...formData, title_en: e.target.value })}
-                  placeholder="e.g., Web Developer"
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>{t("التصنيف", "Category")}</Label>
-              <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v })}>
-                <SelectTrigger>
-                  <SelectValue placeholder={t("اختر التصنيف", "Select category")} />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat.value} value={cat.value}>
-                      {language === "ar" ? cat.label_ar : cat.label_en}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>{t("الوصف (عربي)", "Description (Arabic)")}</Label>
-                <Textarea
-                  value={formData.bio_ar}
-                  onChange={(e) => setFormData({ ...formData, bio_ar: e.target.value })}
-                  placeholder={t("وصف خدماتك بالعربية", "Describe your services in Arabic")}
-                  rows={4}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>{t("الوصف (إنجليزي)", "Description (English)")}</Label>
-                <Textarea
-                  value={formData.bio_en}
-                  onChange={(e) => setFormData({ ...formData, bio_en: e.target.value })}
-                  placeholder="Describe your services in English"
-                  rows={4}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>{t("السعر الابتدائي ($)", "Starting Price ($)")}</Label>
-                <Input
-                  type="number"
-                  value={formData.starting_price}
-                  onChange={(e) => setFormData({ ...formData, starting_price: e.target.value })}
-                  placeholder="0"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>{t("السعر بالساعة ($)", "Hourly Rate ($)")}</Label>
-                <Input
-                  type="number"
-                  value={formData.hourly_rate}
-                  onChange={(e) => setFormData({ ...formData, hourly_rate: e.target.value })}
-                  placeholder="0"
-                />
-              </div>
-            </div>
-          </div>
+          {renderFormFields()}
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
               {t("إلغاء", "Cancel")}
@@ -528,7 +608,7 @@ export default function MyServicesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Service Dialog */}
+      {/* Edit Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -537,91 +617,7 @@ export default function MyServicesPage() {
               {t("قم بتحديث تفاصيل خدمتك", "Update your service details")}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>{t("الاسم (عربي)", "Name (Arabic)")}</Label>
-                <Input
-                  value={formData.name_ar}
-                  onChange={(e) => setFormData({ ...formData, name_ar: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>{t("الاسم (إنجليزي)", "Name (English)")}</Label>
-                <Input
-                  value={formData.name_en}
-                  onChange={(e) => setFormData({ ...formData, name_en: e.target.value })}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>{t("العنوان (عربي)", "Title (Arabic)")}</Label>
-                <Input
-                  value={formData.title_ar}
-                  onChange={(e) => setFormData({ ...formData, title_ar: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>{t("العنوان (إنجليزي)", "Title (English)")}</Label>
-                <Input
-                  value={formData.title_en}
-                  onChange={(e) => setFormData({ ...formData, title_en: e.target.value })}
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>{t("التصنيف", "Category")}</Label>
-              <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat.value} value={cat.value}>
-                      {language === "ar" ? cat.label_ar : cat.label_en}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>{t("الوصف (عربي)", "Description (Arabic)")}</Label>
-                <Textarea
-                  value={formData.bio_ar}
-                  onChange={(e) => setFormData({ ...formData, bio_ar: e.target.value })}
-                  rows={4}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>{t("الوصف (إنجليزي)", "Description (English)")}</Label>
-                <Textarea
-                  value={formData.bio_en}
-                  onChange={(e) => setFormData({ ...formData, bio_en: e.target.value })}
-                  rows={4}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>{t("السعر الابتدائي ($)", "Starting Price ($)")}</Label>
-                <Input
-                  type="number"
-                  value={formData.starting_price}
-                  onChange={(e) => setFormData({ ...formData, starting_price: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>{t("السعر بالساعة ($)", "Hourly Rate ($)")}</Label>
-                <Input
-                  type="number"
-                  value={formData.hourly_rate}
-                  onChange={(e) => setFormData({ ...formData, hourly_rate: e.target.value })}
-                />
-              </div>
-            </div>
-          </div>
+          {renderFormFields()}
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowEditDialog(false)}>
               {t("إلغاء", "Cancel")}
@@ -638,7 +634,7 @@ export default function MyServicesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Confirmation */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>

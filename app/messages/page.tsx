@@ -600,7 +600,15 @@ export default function MessagesPage() {
         return new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()
       })
 
-      setConversations(sortedConversations || [])
+      // Deduplicate by conversation ID
+      const seen = new Set<string>()
+      const uniqueConversations = sortedConversations.filter((conv) => {
+        if (seen.has(conv.id)) return false
+        seen.add(conv.id)
+        return true
+      })
+
+      setConversations(uniqueConversations || [])
     } catch (error) {
       console.error("[v0] Error fetching conversations:", error)
     }

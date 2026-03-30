@@ -11,6 +11,7 @@ export async function createOrder(data: {
   serviceDescriptionAr?: string
   serviceDescriptionEn?: string
   amountCents: number
+  serviceId?: string
 }) {
   try {
     console.log("[v0] Creating order with data:", JSON.stringify(data, null, 2))
@@ -69,7 +70,7 @@ export async function createOrder(data: {
 
     console.log("[v0] Provider ownership verified successfully")
 
-    const orderData = {
+    const orderData: Record<string, any> = {
       conversation_id: data.conversationId,
       seeker_id: data.seekerId,
       provider_id: data.providerId,
@@ -81,6 +82,10 @@ export async function createOrder(data: {
       platform_fee_cents: fees.platformFeeCents,
       provider_amount_cents: fees.providerAmountCents,
       status: "pending",
+    }
+
+    if (data.serviceId) {
+      orderData.service_id = data.serviceId
     }
 
     console.log("[v0] Inserting order data:", JSON.stringify(orderData, null, 2))

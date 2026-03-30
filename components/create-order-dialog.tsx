@@ -15,6 +15,7 @@ interface CreateOrderDialogProps {
   conversationId: string
   seekerId: string
   providerId: string
+  serviceId?: string
   onClose: () => void
   onSuccess: () => void
 }
@@ -23,6 +24,7 @@ export function CreateOrderDialog({
   conversationId,
   seekerId,
   providerId,
+  serviceId,
   onClose,
   onSuccess,
 }: CreateOrderDialogProps) {
@@ -92,6 +94,7 @@ export function CreateOrderDialog({
         serviceDescriptionAr: formData.serviceDescriptionAr,
         serviceDescriptionEn: formData.serviceDescriptionEn,
         amountCents,
+        serviceId,
       })
 
       console.log("[v0] Order creation result:", result)
