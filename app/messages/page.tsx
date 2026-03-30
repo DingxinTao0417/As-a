@@ -579,6 +579,19 @@ export default function MessagesPage() {
     try {
       console.log("[v0] Creating/opening conversation with provider:", providerId)
 
+      // Validate that the providerId is a real provider
+      const { data: providerExists, error: providerError } = await supabase
+        .from("providers")
+        .select("id")
+        .eq("id", providerId)
+        .single()
+
+      if (providerError || !providerExists) {
+        console.error("[v0] Invalid provider ID - provider does not exist:", providerId)
+        router.replace("/messages", { scroll: false })
+        return
+      }
+
       const { data: existing, error: queryError } = await supabase
         .from("conversations")
         .select("*")
