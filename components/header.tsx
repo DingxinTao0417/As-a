@@ -149,7 +149,7 @@ export function Header() {
                         </Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>
-                        <Link href="/register/provider" className="flex items-center gap-2">
+                        <Link href="/my-services" className="flex items-center gap-2">
                           <Briefcase className="h-4 w-4" />
                           {t("خدماتي", "My Services")}
                         </Link>
@@ -226,7 +226,7 @@ export function Header() {
                         {t("لوحة التحكم", "Dashboard")}
                       </Link>
                       <Link
-                        href="/register/provider"
+                        href="/my-services"
                         className="text-sm font-medium hover:text-primary transition-colors"
                       >
                         {t("خدماتي", "My Services")}
