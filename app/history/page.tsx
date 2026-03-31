@@ -43,7 +43,7 @@ export default function HistoryPage() {
   const [user, setUser] = useState<any>(null)
 
   // Review state
-  const [reviewDialog, setReviewDialog] = useState<{isOpen: boolean, order: OrderHistory | null}>({isOpen: false, order: null})
+  const [reviewDialog, setReviewDialog] = useState<{ isOpen: boolean, order: OrderHistory | null }>({ isOpen: false, order: null })
   const [rating, setRating] = useState(5)
   const [hoverRating, setHoverRating] = useState(0)
   const [comment, setComment] = useState("")
@@ -125,7 +125,7 @@ export default function HistoryPage() {
 
   const handleDeleteReview = async (reviewId: string) => {
     if (!confirm(t("هل أنت متأكد من حذف التقييم؟", "Are you sure you want to delete this review?"))) return
-    
+
     const supabase = createClient()
     await supabase.from("reviews").delete().eq("id", reviewId)
     loadHistory()
@@ -134,7 +134,7 @@ export default function HistoryPage() {
   const handleSaveReview = async () => {
     if (!reviewDialog.order || !user) return
     setSubmittingReview(true)
-    
+
     const supabase = createClient()
     const order = reviewDialog.order
 
@@ -207,7 +207,7 @@ export default function HistoryPage() {
                       <div className="flex-1 w-full">
                         <div className="flex flex-col md:flex-row md:items-start justify-between mb-2 gap-2">
                           <div>
-                            <h3 
+                            <h3
                               className={`font-semibold text-lg ${item.service_id ? 'cursor-pointer hover:text-primary transition-colors flex items-center gap-2' : ''}`}
                               onClick={() => item.service_id && router.push(`/services/${item.service_id}`)}
                             >
@@ -223,7 +223,7 @@ export default function HistoryPage() {
                         <p className="text-sm text-muted-foreground mb-4">
                           {language === "ar" ? item.service_description_ar : item.service_description_en}
                         </p>
-                        
+
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t pt-4">
                           <div className="flex items-center gap-4 text-sm">
                             <div className="flex items-center gap-1 text-muted-foreground">
@@ -271,7 +271,7 @@ export default function HistoryPage() {
       </main>
 
       {/* Review Dialog */}
-      <Dialog open={reviewDialog.isOpen} onOpenChange={(open) => !open && setReviewDialog({isOpen: false, order: null})}>
+      <Dialog open={reviewDialog.isOpen} onOpenChange={(open) => !open && setReviewDialog({ isOpen: false, order: null })}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{reviewDialog.order?.review ? t("تعديل التقييم", "Edit Review") : t("إضافة تقييم", "Write Review")}</DialogTitle>
@@ -289,11 +289,10 @@ export default function HistoryPage() {
                     onMouseLeave={() => setHoverRating(0)}
                     className="cursor-pointer p-0.5 transition-transform hover:scale-110"
                   >
-                    <Star className={`h-8 w-8 ${
-                      star <= (hoverRating || rating)
+                    <Star className={`h-8 w-8 ${star <= (hoverRating || rating)
                         ? "fill-yellow-400 text-yellow-400"
                         : "fill-muted text-muted"
-                    }`} />
+                      }`} />
                   </button>
                 ))}
               </div>
@@ -309,7 +308,7 @@ export default function HistoryPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setReviewDialog({isOpen: false, order: null})}>
+            <Button variant="outline" onClick={() => setReviewDialog({ isOpen: false, order: null })}>
               {t("إلغاء", "Cancel")}
             </Button>
             <Button onClick={handleSaveReview} disabled={submittingReview}>
