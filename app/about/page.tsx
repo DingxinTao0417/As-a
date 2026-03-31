@@ -1,0 +1,285 @@
+"use client"
+
+import { Header } from "@/components/header"
+import { Footer } from "@/components/footer"
+import { Button } from "@/components/ui/button"
+import { useLanguage } from "@/components/language-provider"
+import { ArrowRight, ArrowLeft, Shield, Zap, Heart, Globe } from "lucide-react"
+import Link from "next/link"
+
+export default function AboutPage() {
+  const { t, language } = useLanguage()
+  const ArrowIcon = language === "ar" ? ArrowLeft : ArrowRight
+
+  const values = [
+    {
+      icon: Shield,
+      titleAr: "الثقة أولاً",
+      titleEn: "Trust First",
+      descAr: "كل محترف على المنصة يمر بعملية تحقق. دفعك محمي حتى تستلم عملك وترضى عنه.",
+      descEn: "Every professional on the platform is verified. Your payment is protected until you receive and approve your work.",
+    },
+    {
+      icon: Zap,
+      titleAr: "سرعة الإنجاز",
+      titleEn: "Fast Delivery",
+      descAr: "نظام الرسائل المباشر يختصر الوقت. تفاهم مع المحترف وابدأ مشروعك في ساعات لا أيام.",
+      descEn: "Direct messaging cuts out the waiting. Agree with your professional and start your project in hours, not days.",
+    },
+    {
+      icon: Heart,
+      titleAr: "دعم حقيقي",
+      titleEn: "Real Support",
+      descAr: "فريق دعم بشري يرد على استفساراتك ويتابع نزاعاتك حتى حلها. لسنا بوت.",
+      descEn: "A human support team responds to your queries and follows through on disputes until resolved. Not a bot.",
+    },
+    {
+      icon: Globe,
+      titleAr: "هوية محلية",
+      titleEn: "Local Identity",
+      descAr: "بنيت للسوق السعودي بمعرفة السوق السعودي. العملة، اللغة، واحتياجات العمل المحلي في صميم التصميم.",
+      descEn: "Built for the Saudi market with Saudi market knowledge. Currency, language, and local business needs are core to the design.",
+    },
+  ]
+
+  const team = [
+    {
+      nameAr: "عبدالرحمن الغامدي",
+      nameEn: "Abdulrahman Al-Ghamdi",
+      roleAr: "المؤسس والرئيس التنفيذي",
+      roleEn: "Founder & CEO",
+      bioAr: "١٢ سنة في تطوير المنتجات الرقمية. أسس ثلاث شركات ناشئة قبل أسعى.",
+      bioEn: "12 years in digital product development. Founded three startups before As'aa.",
+      initials: "ع",
+    },
+    {
+      nameAr: "لمى السبيعي",
+      nameEn: "Lama Al-Subaie",
+      roleAr: "مديرة المنتج",
+      roleEn: "Head of Product",
+      bioAr: "خبرة في تصميم منصات العمل الحر. شغوفة بتجربة المستخدم العربي.",
+      bioEn: "Experience designing freelance platforms. Passionate about the Arabic user experience.",
+      initials: "ل",
+    },
+    {
+      nameAr: "محمد الدوسري",
+      nameEn: "Mohammed Al-Dosari",
+      roleAr: "مدير التقنية",
+      roleEn: "CTO",
+      bioAr: "مهندس برمجيات بخلفية في أنظمة الدفع الإلكتروني والأمان.",
+      bioEn: "Software engineer with a background in payment systems and security.",
+      initials: "م",
+    },
+  ]
+
+  const milestones = [
+    { year: "2022", eventAr: "الفكرة والتأسيس", eventEn: "Idea & founding" },
+    { year: "2023", eventAr: "الإطلاق التجريبي مع ٢٠٠ محترف", eventEn: "Beta launch with 200 professionals" },
+    { year: "2024", eventAr: "تجاوزنا ١٠٠٠ مشروع مكتمل", eventEn: "Crossed 1,000 completed projects" },
+    { year: "2025", eventAr: "توسّع لأكثر من ٥٠٠٠ محترف مسجّل", eventEn: "Expanded to 5,000+ registered professionals" },
+  ]
+
+  return (
+    <div className="min-h-screen flex flex-col">
+      <Header />
+
+      <main className="flex-1">
+
+        {/* ─── Page header ─── */}
+        <section className="border-b border-border py-16 md:py-24">
+          <div className="container mx-auto px-6">
+            <div className="max-w-2xl">
+              <p className="text-xs font-semibold tracking-widest uppercase text-muted-foreground mb-3">
+                {t("من نحن", "About us")}
+              </p>
+              <h1 className="text-4xl md:text-5xl font-bold text-foreground leading-tight mb-6">
+                {language === "ar"
+                  ? <>منصة بُنيت لأن<br />الكفاءة السعودية تستحق أكثر</>
+                  : <>A platform built because<br />Saudi talent deserves better</>
+                }
+              </h1>
+              <p className="text-lg text-muted-foreground leading-relaxed">
+                {t(
+                  "أسعى منصة للخدمات المهنية تربط أصحاب المشاريع بالمحترفين المستقلين في المملكة العربية السعودية. بدأنا بسؤال بسيط: لماذا يلجأ السعوديون لمنصات أجنبية لإنجاز مهام محلية؟",
+                  "As'aa is a professional services platform connecting project owners with independent professionals in Saudi Arabia. We started with a simple question: why do Saudis use foreign platforms to complete local tasks?"
+                )}
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* ─── Mission ─── */}
+        <section className="py-16 md:py-24 bg-muted/30">
+          <div className="container mx-auto px-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center max-w-5xl mx-auto">
+              <div>
+                <p className="text-xs font-semibold tracking-widest uppercase text-muted-foreground mb-3">
+                  {t("مهمتنا", "Our mission")}
+                </p>
+                <h2 className="text-3xl font-bold text-foreground mb-6 leading-snug">
+                  {t(
+                    "تمكين المواهب المحلية وتسهيل الوصول إليها",
+                    "Empowering local talent and making it accessible"
+                  )}
+                </h2>
+                <p className="text-muted-foreground leading-relaxed mb-4">
+                  {t(
+                    "نؤمن أن في كل مدينة سعودية مواهب استثنائية لم تجد بعد المنصة الصحيحة. مهمتنا أن نكون تلك المنصة — بيئة عمل نظيفة وعادلة تحمي الطرفين وتتيح الإنجاز بثقة.",
+                    "We believe every Saudi city holds exceptional talent that hasn't yet found the right platform. Our mission is to be that platform — a clean, fair working environment that protects both parties and enables confident delivery."
+                  )}
+                </p>
+                <p className="text-muted-foreground leading-relaxed">
+                  {t(
+                    "لسنا مجرد سوق للخدمات. نحن نبني منظومة للعمل الحر المحلي تعكس قيم وثقافة المجتمع السعودي.",
+                    "We're not just a service marketplace. We're building an ecosystem for local freelance work that reflects the values and culture of Saudi society."
+                  )}
+                </p>
+              </div>
+
+              {/* Stats block */}
+              <div className="grid grid-cols-2 gap-4">
+                {[
+                  { numAr: "+٥٠٠٠", numEn: "5,000+", labelAr: "محترف مسجّل", labelEn: "Professionals" },
+                  { numAr: "+١٢٠٠٠", numEn: "12,000+", labelAr: "مشروع مكتمل", labelEn: "Projects done" },
+                  { numAr: "٩٨٪", numEn: "98%", labelAr: "نسبة رضا العملاء", labelEn: "Client satisfaction" },
+                  { numAr: "٢٠+", numEn: "20+", labelAr: "تخصصاً مهنياً", labelEn: "Specialties" },
+                ].map((s, i) => (
+                  <div key={i} className="bg-background rounded-2xl border border-border p-6">
+                    <div className="text-3xl font-bold text-foreground mb-1">{t(s.numAr, s.numEn)}</div>
+                    <div className="text-sm text-muted-foreground">{t(s.labelAr, s.labelEn)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ─── Values ─── */}
+        <section className="py-16 md:py-24">
+          <div className="container mx-auto px-6">
+            <div className="max-w-5xl mx-auto">
+              <div className="mb-12">
+                <p className="text-xs font-semibold tracking-widest uppercase text-muted-foreground mb-3">
+                  {t("ما يميّزنا", "What sets us apart")}
+                </p>
+                <h2 className="text-3xl font-bold text-foreground">
+                  {t("مبادئ نبني عليها كل قرار", "Principles behind every decision")}
+                </h2>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {values.map((v, i) => {
+                  const Icon = v.icon
+                  return (
+                    <div key={i} className="flex gap-5">
+                      <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center mt-0.5">
+                        <Icon className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-foreground mb-2">{t(v.titleAr, v.titleEn)}</h3>
+                        <p className="text-sm text-muted-foreground leading-relaxed">{t(v.descAr, v.descEn)}</p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ─── Timeline ─── */}
+        <section className="py-16 md:py-24 bg-muted/30 border-y border-border">
+          <div className="container mx-auto px-6">
+            <div className="max-w-3xl mx-auto">
+              <div className="mb-12">
+                <p className="text-xs font-semibold tracking-widest uppercase text-muted-foreground mb-3">
+                  {t("مسيرتنا", "Our journey")}
+                </p>
+                <h2 className="text-3xl font-bold text-foreground">
+                  {t("من الفكرة إلى الواقع", "From idea to reality")}
+                </h2>
+              </div>
+              <div className="relative">
+                {/* vertical line */}
+                <div className="absolute top-0 bottom-0 right-[19px] md:right-auto md:left-[19px] w-px bg-border" />
+                <div className="space-y-10">
+                  {milestones.map((m, i) => (
+                    <div key={i} className="flex items-start gap-6 relative">
+                      <div className="flex-shrink-0 w-10 h-10 rounded-full border-2 border-primary bg-background flex items-center justify-center z-10">
+                        <div className="w-2.5 h-2.5 rounded-full bg-primary" />
+                      </div>
+                      <div className="pt-1.5">
+                        <span className="text-xs font-semibold text-muted-foreground tracking-wider">{m.year}</span>
+                        <p className="text-base font-medium text-foreground mt-0.5">{t(m.eventAr, m.eventEn)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ─── Team ─── */}
+        <section className="py-16 md:py-24">
+          <div className="container mx-auto px-6">
+            <div className="max-w-5xl mx-auto">
+              <div className="mb-12">
+                <p className="text-xs font-semibold tracking-widest uppercase text-muted-foreground mb-3">
+                  {t("الفريق", "The team")}
+                </p>
+                <h2 className="text-3xl font-bold text-foreground">
+                  {t("الأشخاص خلف أسعى", "The people behind As'aa")}
+                </h2>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                {team.map((member, i) => (
+                  <div key={i} className="rounded-2xl border border-border p-6">
+                    <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary mb-5">
+                      {member.initials}
+                    </div>
+                    <div className="font-semibold text-foreground text-lg">{t(member.nameAr, member.nameEn)}</div>
+                    <div className="text-sm text-muted-foreground mb-3">{t(member.roleAr, member.roleEn)}</div>
+                    <p className="text-sm text-muted-foreground leading-relaxed">{t(member.bioAr, member.bioEn)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ─── CTA ─── */}
+        <section className="py-16 md:py-24 bg-secondary text-secondary-foreground">
+          <div className="container mx-auto px-6">
+            <div className="max-w-2xl mx-auto text-center">
+              <h2 className="text-3xl md:text-4xl font-bold mb-4">
+                {t("انضم إلى المجتمع", "Join the community")}
+              </h2>
+              <p className="text-muted-foreground text-lg mb-10">
+                {t(
+                  "سواء كنت تبحث عن محترف أو تعرض خدماتك، أسعى هي المكان المناسب.",
+                  "Whether you're looking for a professional or offering your services, As'aa is the right place."
+                )}
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <Button size="lg" className="bg-primary hover:bg-primary/90 rounded-full px-8 h-12 text-base gap-2" asChild>
+                  <Link href="/services/seeker">
+                    {t("ابحث عن محترف", "Find a professional")}
+                    <ArrowIcon className="h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button size="lg" variant="outline" className="rounded-full px-8 h-12 text-base bg-transparent" asChild>
+                  <Link href="/auth/signup">
+                    {t("سجّل كمحترف", "Register as professional")}
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </main>
+
+      <Footer />
+    </div>
+  )
+}
