@@ -42,8 +42,8 @@ export async function POST(req: NextRequest) {
       console.log("[v0] Payment successful for order:", orderId)
 
       // Update order in database
-      const supabase = createServerClient()
-      await supabase
+      const supabase = await createServerClient()
+      const { error: updateError } = await supabase
         .from("orders")
         .update({
           status: "paid",
@@ -51,6 +51,11 @@ export async function POST(req: NextRequest) {
           paid_at: new Date().toISOString(),
         })
         .eq("id", orderId)
+
+      if (updateError) {
+        console.error("[v0] Failed to update order to paid:", updateError)
+        return NextResponse.json({ error: "Failed to update order" }, { status: 500 })
+      }
 
       console.log("[v0] Order updated to paid status")
     }

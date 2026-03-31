@@ -87,17 +87,13 @@ function statusVariant(status: string): "default" | "secondary" | "outline" | "d
 
 function formatDate(
   iso: string | null | undefined,
-  locale: string,
   fallback: string
 ) {
   if (!iso) return fallback
-  return new Date(iso).toLocaleDateString(locale, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
+  const d = new Date(iso)
+  const date = d.toISOString().slice(0, 10)
+  const time = d.toISOString().slice(11, 16)
+  return `${date} ${time}`
 }
 
 // ─── Order detail drawer ────────────────────────────────────────────────────
@@ -116,7 +112,6 @@ function OrderDetailDialog({
   onChat: (convId: string) => void
 }) {
   const { t, language } = useLanguage()
-  const locale = language === "ar" ? "ar-SA" : "en-US"
   const fallback = t("—", "—")
 
   if (!order) return null
@@ -148,19 +143,19 @@ function OrderDetailDialog({
     },
     {
       label: t("تاريخ الإنشاء", "Created at"),
-      value: formatDate(order.created_at, locale, fallback),
+      value: formatDate(order.created_at, fallback),
     },
     {
       label: t("تاريخ دفع العميل", "Client paid at"),
-      value: formatDate(order.paid_at, locale, fallback),
+      value: formatDate(order.paid_at, fallback),
     },
     {
       label: t("تاريخ إتمام التسليم", "Delivered at"),
-      value: formatDate(order.completed_at, locale, fallback),
+      value: formatDate(order.completed_at, fallback),
     },
     {
       label: t("تاريخ الإلغاء", "Cancelled at"),
-      value: formatDate(order.cancelled_at, locale, fallback),
+      value: formatDate(order.cancelled_at, fallback),
     },
     {
       label: t("الحالة", "Status"),
@@ -247,8 +242,6 @@ export function OrdersTable({ orders: rawOrders }: { orders: Order[] }) {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
 
   // ── helpers ──
-  const locale = language === "ar" ? "ar-SA" : "en-US"
-
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"))
@@ -288,12 +281,12 @@ export function OrdersTable({ orders: rawOrders }: { orders: Order[] }) {
       data = data.filter((o) => o.status === statusFilter)
     }
 
-    // date range
-    if (dateFrom) {
+    // date range — only apply when value is a valid YYYY-MM-DD
+    const dateRe = /^\d{4}-\d{2}-\d{2}$/
+    if (dateFrom && dateRe.test(dateFrom)) {
       data = data.filter((o) => new Date(o.created_at) >= new Date(dateFrom))
     }
-    if (dateTo) {
-      // include the whole day
+    if (dateTo && dateRe.test(dateTo)) {
       const toDate = new Date(dateTo)
       toDate.setHours(23, 59, 59, 999)
       data = data.filter((o) => new Date(o.created_at) <= toDate)
@@ -412,11 +405,16 @@ export function OrdersTable({ orders: rawOrders }: { orders: Order[] }) {
             <div className="relative">
               <CalendarDays className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input
-                type="date"
+                type="text"
+                inputMode="numeric"
+                placeholder="YYYY-MM-DD"
                 value={dateFrom}
-                onChange={(e) => { setDateFrom(e.target.value); setPage(1) }}
-                className="pr-9 w-[160px]"
-                title={t("من تاريخ", "From date")}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setDateFrom(v)
+                  if (v === "" || /^\d{4}-\d{2}-\d{2}$/.test(v)) setPage(1)
+                }}
+                className="pr-9 w-[148px] placeholder:text-muted-foreground/50"
               />
             </div>
 
@@ -424,11 +422,16 @@ export function OrdersTable({ orders: rawOrders }: { orders: Order[] }) {
             <div className="relative">
               <CalendarDays className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input
-                type="date"
+                type="text"
+                inputMode="numeric"
+                placeholder="YYYY-MM-DD"
                 value={dateTo}
-                onChange={(e) => { setDateTo(e.target.value); setPage(1) }}
-                className="pr-9 w-[160px]"
-                title={t("إلى تاريخ", "To date")}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setDateTo(v)
+                  if (v === "" || /^\d{4}-\d{2}-\d{2}$/.test(v)) setPage(1)
+                }}
+                className="pr-9 w-[148px] placeholder:text-muted-foreground/50"
               />
             </div>
 
@@ -515,7 +518,7 @@ export function OrdersTable({ orders: rawOrders }: { orders: Order[] }) {
                               {t("ربحك:", "Earning:")} ${(order.provider_amount_cents / 100).toFixed(2)}
                             </span>
                             <span>
-                              {new Date(order.created_at).toLocaleDateString(locale, { year: "numeric", month: "short", day: "numeric" })}
+                              {new Date(order.created_at).toISOString().slice(0, 10)}
                             </span>
                           </div>
                         </div>

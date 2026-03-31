@@ -253,6 +253,14 @@ export default function ProfilePage() {
   }
 
   const handleChangePassword = async () => {
+    if (!passwordForm.current_password) {
+      toast({
+        title: t("خطأ", "Error"),
+        description: t("يرجى إدخال كلمة المرور الحالية", "Please enter your current password"),
+        variant: "destructive",
+      })
+      return
+    }
     if (passwordForm.new_password !== passwordForm.confirm_password) {
       toast({
         title: t("خطأ", "Error"),
@@ -273,6 +281,20 @@ export default function ProfilePage() {
     setChangingPassword(true)
     try {
       const supabase = createClient()
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: profile.email,
+        password: passwordForm.current_password,
+      })
+      if (signInError) {
+        toast({
+          title: t("خطأ", "Error"),
+          description: t("كلمة المرور الحالية غير صحيحة", "Current password is incorrect"),
+          variant: "destructive",
+        })
+        return
+      }
+
       const { error } = await supabase.auth.updateUser({
         password: passwordForm.new_password,
       })
