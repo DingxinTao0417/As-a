@@ -8,8 +8,8 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { useLanguage } from "@/components/language-provider"
-import { Plus, Edit2, Trash2, Save, Briefcase, Clock, DollarSign, Star, MessageCircle } from "lucide-react"
-import { useState, useEffect } from "react"
+import { Plus, Edit2, Trash2, Save, Briefcase, Clock, DollarSign, Star, MessageCircle, ImagePlus, X } from "lucide-react"
+import { useState, useEffect, useRef } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
@@ -51,6 +51,7 @@ type Service = {
   price_type: string
   delivery_time: string | null
   features: string[]
+  image_urls: string[]
   is_active: boolean
   created_at: string
 }
@@ -98,6 +99,13 @@ export default function MyServicesPage() {
   const [showReviewsDialog, setShowReviewsDialog] = useState(false)
   const [reviewsList, setReviewsList] = useState<ProviderReview[]>([])
   const [isLoadingReviews, setIsLoadingReviews] = useState(false)
+
+  // Image upload state
+  const [imageFiles, setImageFiles] = useState<File[]>([])
+  const [imagePreviews, setImagePreviews] = useState<string[]>([])
+  const [existingImageUrls, setExistingImageUrls] = useState<string[]>([])
+  const [isUploadingImages, setIsUploadingImages] = useState(false)
+  const imageInputRef = useRef<HTMLInputElement>(null)
 
   const [formData, setFormData] = useState({
     name_ar: "",
@@ -193,6 +201,10 @@ export default function MyServicesPage() {
       features: [],
     })
     setFeatureInput("")
+    setImageFiles([])
+    setImagePreviews([])
+    setExistingImageUrls([])
+    if (imageInputRef.current) imageInputRef.current.value = ""
   }
 
   const addFeature = () => {
@@ -204,6 +216,103 @@ export default function MyServicesPage() {
 
   const removeFeature = (feature: string) => {
     setFormData({ ...formData, features: formData.features.filter((f) => f !== feature) })
+  }
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    const totalCount = existingImageUrls.length + imagePreviews.length + files.length
+    const MAX_IMAGES = 10
+
+    if (totalCount > MAX_IMAGES) {
+      toast({
+        title: t("تجاوز الحد المسموح", "Limit exceeded"),
+        description: t(`يمكنك رفع ${MAX_IMAGES} صور كحد أقصى`, `You can upload up to ${MAX_IMAGES} images`),
+        variant: "destructive",
+      })
+      // Only take what fits
+      const remaining = MAX_IMAGES - existingImageUrls.length - imagePreviews.length
+      if (remaining <= 0) return
+      files.splice(remaining)
+    }
+
+    const validFiles = files.filter((f) => {
+      if (!f.type.startsWith("image/")) return false
+      if (f.size > 10 * 1024 * 1024) {
+        toast({
+          title: t("ملف كبير جداً", "File too large"),
+          description: t(`${f.name} يتجاوز 10MB`, `${f.name} exceeds 10MB`),
+          variant: "destructive",
+        })
+        return false
+      }
+      return true
+    })
+
+    const newPreviews = validFiles.map((f) => URL.createObjectURL(f))
+    setImageFiles((prev) => [...prev, ...validFiles])
+    setImagePreviews((prev) => [...prev, ...newPreviews])
+    if (imageInputRef.current) imageInputRef.current.value = ""
+  }
+
+  const removeNewImage = (index: number) => {
+    URL.revokeObjectURL(imagePreviews[index])
+    setImageFiles((prev) => prev.filter((_, i) => i !== index))
+    setImagePreviews((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const removeExistingImage = (index: number) => {
+    setExistingImageUrls((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const uploadImages = async (serviceId: string): Promise<string[]> => {
+    const supabase = createClient()
+    const uploaded: string[] = []
+
+    for (const file of imageFiles) {
+      // Get image dimensions
+      const dimensions = await new Promise<{ w: number; h: number }>((resolve) => {
+        const img = new Image()
+        const url = URL.createObjectURL(file)
+        img.onload = () => {
+          resolve({ w: img.naturalWidth, h: img.naturalHeight })
+          URL.revokeObjectURL(url)
+        }
+        img.onerror = () => {
+          resolve({ w: 0, h: 0 })
+          URL.revokeObjectURL(url)
+        }
+        img.src = url
+      })
+
+      // Build filename: originalname_timestamp_WxH.ext
+      const ext = (file.name.split(".").pop() || "jpg").toLowerCase()
+      const baseName = file.name
+        .replace(/\.[^/.]+$/, "")           // remove extension
+        .replace(/[^a-zA-Z0-9\u0600-\u06FF_-]/g, "_") // keep letters, numbers, Arabic, _ -
+        .replace(/_+/g, "_")               // collapse repeated underscores
+        .slice(0, 60)                      // max 60 chars
+      const timestamp = Date.now()
+      const sizeTag = dimensions.w > 0 ? `${dimensions.w}x${dimensions.h}` : "unknown"
+      const fileName = `${baseName}_${timestamp}_${sizeTag}.${ext}`
+      const filePath = `${providerId}/${serviceId}/${fileName}`
+
+      const { error } = await supabase.storage
+        .from("service-images")
+        .upload(filePath, file, { contentType: file.type })
+
+      if (error) {
+        console.error("Image upload error:", error)
+        continue
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from("service-images")
+        .getPublicUrl(filePath)
+
+      uploaded.push(publicUrl)
+    }
+
+    return uploaded
   }
 
   const handleCreate = async () => {
@@ -219,9 +328,10 @@ export default function MyServicesPage() {
     }
 
     setIsSaving(true)
+    setIsUploadingImages(imageFiles.length > 0)
     const supabase = createClient()
 
-    const { error } = await supabase.from("services").insert({
+    const { data: newService, error } = await supabase.from("services").insert({
       provider_id: providerId,
       name_ar: formData.name_ar,
       name_en: formData.name_en,
@@ -233,11 +343,11 @@ export default function MyServicesPage() {
       delivery_time: formData.delivery_time || null,
       features: formData.features,
       is_active: true,
-    })
+    }).select("id").single()
 
-    setIsSaving(false)
-
-    if (error) {
+    if (error || !newService) {
+      setIsSaving(false)
+      setIsUploadingImages(false)
       console.error("[v0] Error creating service:", error)
       toast({
         title: t("خطأ", "Error"),
@@ -246,6 +356,17 @@ export default function MyServicesPage() {
       })
       return
     }
+
+    // Upload images if any
+    if (imageFiles.length > 0) {
+      const uploadedUrls = await uploadImages(newService.id)
+      if (uploadedUrls.length > 0) {
+        await supabase.from("services").update({ image_urls: uploadedUrls }).eq("id", newService.id)
+      }
+    }
+
+    setIsSaving(false)
+    setIsUploadingImages(false)
 
     toast({
       title: t("تم بنجاح", "Success"),
@@ -261,7 +382,17 @@ export default function MyServicesPage() {
     if (!providerId || !selectedService) return
 
     setIsSaving(true)
+    setIsUploadingImages(imageFiles.length > 0)
     const supabase = createClient()
+
+    // Upload new images first
+    let newUploadedUrls: string[] = []
+    if (imageFiles.length > 0) {
+      newUploadedUrls = await uploadImages(selectedService.id)
+    }
+
+    // Merge: existing (kept) + newly uploaded
+    const finalImageUrls = [...existingImageUrls, ...newUploadedUrls]
 
     const { error } = await supabase
       .from("services")
@@ -275,10 +406,12 @@ export default function MyServicesPage() {
         price_type: formData.price_type,
         delivery_time: formData.delivery_time || null,
         features: formData.features,
+        image_urls: finalImageUrls,
       })
       .eq("id", selectedService.id)
 
     setIsSaving(false)
+    setIsUploadingImages(false)
 
     if (error) {
       toast({
@@ -386,6 +519,9 @@ export default function MyServicesPage() {
       delivery_time: service.delivery_time || "",
       features: service.features || [],
     })
+    setExistingImageUrls(service.image_urls || [])
+    setImageFiles([])
+    setImagePreviews([])
     setShowEditDialog(true)
   }
 
@@ -517,6 +653,79 @@ export default function MyServicesPage() {
                 <span className="text-destructive">×</span>
               </Badge>
             ))}
+          </div>
+        )}
+      </div>
+
+      {/* Image Upload */}
+      <div className="space-y-2">
+        <Label>
+          {t("صور الخدمة", "Service Images")}
+          <span className="text-muted-foreground text-xs ms-2">
+            ({existingImageUrls.length + imagePreviews.length}/10)
+          </span>
+        </Label>
+
+        {/* Existing images (edit mode) */}
+        {existingImageUrls.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {existingImageUrls.map((url, idx) => (
+              <div key={idx} className="relative h-20 w-24 rounded-lg overflow-hidden border group">
+                <img src={url} alt="" className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => removeExistingImage(idx)}
+                  className="absolute top-1 right-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* New image previews */}
+        {imagePreviews.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {imagePreviews.map((src, idx) => (
+              <div key={idx} className="relative h-20 w-24 rounded-lg overflow-hidden border group">
+                <img src={src} alt="" className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => removeNewImage(idx)}
+                  className="absolute top-1 right-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Upload button */}
+        {existingImageUrls.length + imagePreviews.length < 10 && (
+          <div>
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={handleImageSelect}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={() => imageInputRef.current?.click()}
+            >
+              <ImagePlus className="h-4 w-4" />
+              {t("إضافة صور", "Add Images")}
+            </Button>
+            <p className="text-xs text-muted-foreground mt-1">
+              {t("PNG, JPG حتى 10MB لكل صورة", "PNG, JPG up to 10MB each")}
+            </p>
           </div>
         )}
       </div>
@@ -660,11 +869,16 @@ export default function MyServicesPage() {
             </Button>
             <Button onClick={handleCreate} disabled={isSaving}>
               {isSaving ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  {isUploadingImages ? t("جاري رفع الصور...", "Uploading...") : t("جاري الحفظ...", "Saving...")}
+                </>
               ) : (
-                <Save className="h-4 w-4 mr-2" />
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  {t("حفظ", "Save")}
+                </>
               )}
-              {t("حفظ", "Save")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -686,11 +900,16 @@ export default function MyServicesPage() {
             </Button>
             <Button onClick={handleEdit} disabled={isSaving}>
               {isSaving ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  {isUploadingImages ? t("جاري رفع الصور...", "Uploading...") : t("جاري الحفظ...", "Saving...")}
+                </>
               ) : (
-                <Save className="h-4 w-4 mr-2" />
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  {t("حفظ التغييرات", "Save Changes")}
+                </>
               )}
-              {t("حفظ التغييرات", "Save Changes")}
             </Button>
           </DialogFooter>
         </DialogContent>

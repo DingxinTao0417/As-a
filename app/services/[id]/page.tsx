@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { createDirectOrder, createCheckoutSession } from "@/app/actions/orders"
@@ -43,6 +43,7 @@ type ServiceWithProvider = {
   price_type: string
   delivery_time: string | null
   features: string[]
+  image_urls: string[]
   is_active: boolean
   provider_id: string
   created_at: string
@@ -93,12 +94,8 @@ type Review = {
 }
 
 // --- Placeholder Portfolio Images ---
-const portfolioImages = [
-  "https://placehold.co/800x500/1a1a2e/e0e0e0?text=Logo+Design+1",
-  "https://placehold.co/800x500/16213e/e0e0e0?text=Logo+Design+2",
-  "https://placehold.co/800x500/0f3460/e0e0e0?text=Logo+Design+3",
-  "https://placehold.co/800x500/533483/e0e0e0?text=Logo+Design+4",
-  "https://placehold.co/800x500/e94560/e0e0e0?text=Logo+Design+5",
+const PLACEHOLDER_IMAGES = [
+  "https://placehold.co/800x500/1a1a2e/e0e0e0?text=Service+Image",
 ]
 
 
@@ -147,6 +144,14 @@ export default function ServiceDetailPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
   const [activeImage, setActiveImage] = useState(0)
+  const thumbsRef = useRef<HTMLDivElement>(null)
+
+  // Scroll thumbnail strip to keep active thumb visible
+  useEffect(() => {
+    if (!thumbsRef.current) return
+    const thumb = thumbsRef.current.children[activeImage] as HTMLElement
+    if (thumb) thumb.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" })
+  }, [activeImage])
 
   // Order state
   const [isOrdering, setIsOrdering] = useState(false)
@@ -269,6 +274,11 @@ export default function ServiceDetailPage() {
   const providerRating = service.providers?.rating || 5.0
   const providerReviews = service.providers?.reviews_count || 0
 
+  // Use real images if available, else fall back to placeholder
+  const galleryImages = service.image_urls && service.image_urls.length > 0
+    ? service.image_urls
+    : PLACEHOLDER_IMAGES
+
   const getPriceTypeLabel = (type: string) => {
     switch (type) {
       case "fixed": return t("سعر ثابت", "Fixed Price")
@@ -334,41 +344,71 @@ export default function ServiceDetailPage() {
 
               {/* Portfolio Gallery */}
               <div className="space-y-3">
-                {/* Primary Image */}
+                {/* Primary Image - sliding carousel */}
                 <div className="relative rounded-xl overflow-hidden bg-muted aspect-[16/10] group">
-                  <img
-                    src={portfolioImages[activeImage]}
-                    alt={`Portfolio ${activeImage + 1}`}
-                    className="w-full h-full object-cover"
-                  />
-                  {/* Nav Arrows */}
-                  <button
-                    onClick={() => setActiveImage((prev) => (prev === 0 ? portfolioImages.length - 1 : prev - 1))}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full bg-background/80 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg cursor-pointer hover:bg-background"
+                  <div
+                    className="flex h-full transition-transform duration-500 ease-in-out"
+                    style={{ transform: `translateX(-${activeImage * 100}%)` }}
                   >
-                    <ChevronLeft className="h-5 w-5" />
-                  </button>
-                  <button
-                    onClick={() => setActiveImage((prev) => (prev === portfolioImages.length - 1 ? 0 : prev + 1))}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full bg-background/80 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg cursor-pointer hover:bg-background"
-                  >
-                    <ChevronRight className="h-5 w-5" />
-                  </button>
+                    {galleryImages.map((img, idx) => (
+                      <div key={idx} className="w-full h-full flex-shrink-0">
+                        <img
+                          src={img}
+                          alt={`${name} - ${idx + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Nav Arrows - only show if more than 1 image */}
+                  {galleryImages.length > 1 && (
+                    <>
+                      <button
+                        onClick={() => setActiveImage((prev) => (prev === 0 ? galleryImages.length - 1 : prev - 1))}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full bg-background/80 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg cursor-pointer hover:bg-background"
+                      >
+                        <ChevronLeft className="h-5 w-5" />
+                      </button>
+                      <button
+                        onClick={() => setActiveImage((prev) => (prev === galleryImages.length - 1 ? 0 : prev + 1))}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full bg-background/80 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg cursor-pointer hover:bg-background"
+                      >
+                        <ChevronRight className="h-5 w-5" />
+                      </button>
+
+                      {/* Dot indicators */}
+                      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
+                        {galleryImages.map((_, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => setActiveImage(idx)}
+                            className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
+                              activeImage === idx ? "w-4 bg-white" : "w-1.5 bg-white/50 hover:bg-white/80"
+                            }`}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
-                {/* Thumbnails */}
-                <div className="flex gap-2">
-                  {portfolioImages.map((img, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => setActiveImage(idx)}
-                      className={`relative rounded-lg overflow-hidden h-16 w-24 flex-shrink-0 cursor-pointer transition-all duration-200 ${
-                        activeImage === idx ? "ring-2 ring-primary ring-offset-2" : "opacity-60 hover:opacity-100"
-                      }`}
-                    >
-                      <img src={img} alt={`Thumb ${idx + 1}`} className="w-full h-full object-cover" />
-                    </button>
-                  ))}
-                </div>
+
+                {/* Thumbnails - only show if more than 1 image */}
+                {galleryImages.length > 1 && (
+                  <div ref={thumbsRef} className="flex gap-2 overflow-x-auto px-1 py-1">
+                    {galleryImages.map((img, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => setActiveImage(idx)}
+                        className={`relative rounded-lg overflow-hidden h-16 w-24 flex-shrink-0 cursor-pointer transition-all duration-200 ${
+                          activeImage === idx ? "ring-2 ring-primary ring-offset-2" : "opacity-60 hover:opacity-100"
+                        }`}
+                      >
+                        <img src={img} alt={`Thumb ${idx + 1}`} className="w-full h-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Service Description */}
