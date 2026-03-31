@@ -4,34 +4,14 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useLanguage } from "@/components/language-provider"
 import { createClient } from "@/lib/supabase/client"
-import { completeOrder } from "@/app/actions/orders"
 import { createConnectAccount, createAccountLink, checkAccountStatus, createPayout } from "@/app/actions/stripe-connect"
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Briefcase, CheckCircle, Clock, DollarSign, AlertCircle, LinkIcon } from "lucide-react"
+import { Clock, DollarSign, AlertCircle, LinkIcon, CheckCircle } from "lucide-react"
+import { OrdersTable, type Order } from "@/components/orders-table"
 
-interface Order {
-  id: string
-  conversation_id: string
-  service_name_ar: string
-  service_name_en: string
-  service_description_ar: string
-  service_description_en: string
-  amount_cents: number
-  provider_amount_cents: number
-  status: string
-  created_at: string
-  paid_at: string
-  completed_at: string
-  seeker_id: string
-  seeker: {
-    full_name: string
-    email: string
-  }
-}
 
 export default function DashboardPage() {
   const { t, language } = useLanguage()
@@ -122,11 +102,13 @@ export default function DashboardPage() {
           service_description_ar,
           service_description_en,
           amount_cents,
+          platform_fee_cents,
           provider_amount_cents,
           status,
           created_at,
           paid_at,
           completed_at,
+          cancelled_at,
           seeker_id
         `)
         .eq("provider_id", provider.id)
@@ -189,23 +171,6 @@ export default function DashboardPage() {
 
     fetchData()
   }, [router])
-
-  const handleGoToChat = (conversationId: string) => {
-    router.push(`/messages?conversation=${conversationId}`)
-  }
-
-  const handleCompleteOrder = async (orderId: string) => {
-    if (!confirm(t("هل أنت متأكد من إتمام هذا الطلب؟", "Are you sure you want to complete this order?"))) {
-      return
-    }
-
-    const result = await completeOrder(orderId)
-    if (result.success) {
-      window.location.reload()
-    } else {
-      alert(result.error || t("فشل في إتمام الطلب", "Failed to complete order"))
-    }
-  }
 
   const handleConnectStripe = async () => {
     setConnectingStripe(true)
@@ -415,90 +380,8 @@ export default function DashboardPage() {
             </Card>
           </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>{t("طلباتي", "My Orders")}</CardTitle>
-              <CardDescription>{t("عرض وإدارة جميع الطلبات", "View and manage all orders")}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {orders.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <Briefcase className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>{t("لا توجد طلبات حتى الآن", "No orders yet")}</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {orders.map((order) => (
-                    <Card key={order.id}>
-                      <CardContent className="pt-6">
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
-                              <h3 className="font-semibold">
-                                {language === "ar" ? order.service_name_ar : order.service_name_en}
-                              </h3>
-                              <Badge
-                                variant={
-                                  order.status === "paid"
-                                    ? "default"
-                                    : order.status === "completed"
-                                      ? "secondary"
-                                      : "outline"
-                                }
-                              >
-                                {order.status === "paid"
-                                  ? t("مدفوع", "Paid")
-                                  : order.status === "completed"
-                                    ? t("مكتمل", "Completed")
-                                    : order.status === "pending"
-                                      ? t("معلق", "Pending")
-                                      : order.status === "awaiting_confirmation"
-                                        ? t("بانتظار تأكيد العميل", "Awaiting client confirmation")
-                                        : order.status}
-                              </Badge>
-                            </div>
-                            <p className="text-sm text-muted-foreground mb-2">
-                              {language === "ar" ? order.service_description_ar : order.service_description_en}
-                            </p>
-                            <div className="flex items-center gap-4 text-sm mb-3">
-                              <span className="text-muted-foreground">
-                                {t("العميل:", "Client:")} {order.seeker.full_name}
-                              </span>
-                              <span className="font-semibold text-green-600">
-                                {t("ربحك:", "Your earning:")} ${(order.provider_amount_cents / 100).toFixed(2)}
-                              </span>
-                            </div>
-                            {order.completed_at && (
-                              <p className="text-xs text-muted-foreground">
-                                {t("اكتمل في:", "Completed at:")}{" "}
-                                {new Date(order.completed_at).toLocaleDateString(language === "ar" ? "ar-SA" : "en-US")}
-                              </p>
-                            )}
-                          </div>
-                          <div className="flex gap-2">
-                            <Button variant="outline" size="sm" onClick={() => handleGoToChat(order.conversation_id)}>
-                              {t("المحادثة", "Chat")}
-                            </Button>
-                            {(order.status === "paid" || order.status === "pending") && (
-                              <Button size="sm" onClick={() => handleCompleteOrder(order.id)}>
-                                <CheckCircle className="h-4 w-4 mr-2" />
-                                {t("تسليم العمل", "Deliver Work")}
-                              </Button>
-                            )}
-                            {order.status === "awaiting_confirmation" && (
-                              <Badge variant="outline" className="text-yellow-600">
-                                {t("بانتظار تأكيد العميل", "Awaiting client confirmation")}
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <OrdersTable orders={orders} />
+
         </div>
       </main>
 
