@@ -16,6 +16,13 @@ interface CreateOrderDialogProps {
   seekerId: string
   providerId: string
   serviceId?: string
+  prefill?: {
+    serviceNameAr: string
+    serviceNameEn: string
+    serviceDescriptionAr: string
+    serviceDescriptionEn: string
+    amount: string
+  }
   onClose: () => void
   onSuccess: () => void
 }
@@ -25,6 +32,7 @@ export function CreateOrderDialog({
   seekerId,
   providerId,
   serviceId,
+  prefill,
   onClose,
   onSuccess,
 }: CreateOrderDialogProps) {
@@ -33,20 +41,24 @@ export function CreateOrderDialog({
   const [error, setError] = useState("")
 
   const [formData, setFormData] = useState({
-    serviceNameAr: "",
-    serviceNameEn: "",
-    serviceDescriptionAr: "",
-    serviceDescriptionEn: "",
-    amount: "",
+    serviceNameAr: prefill?.serviceNameAr ?? "",
+    serviceNameEn: prefill?.serviceNameEn ?? "",
+    serviceDescriptionAr: prefill?.serviceDescriptionAr ?? "",
+    serviceDescriptionEn: prefill?.serviceDescriptionEn ?? "",
+    amount: prefill?.amount ?? "",
   })
 
   useEffect(() => {
-    console.log("[v0] CreateOrderDialog mounted with props:", {
-      conversationId,
-      seekerId,
-      providerId,
-    })
-  }, [conversationId, seekerId, providerId])
+    if (prefill) {
+      setFormData({
+        serviceNameAr: prefill.serviceNameAr,
+        serviceNameEn: prefill.serviceNameEn,
+        serviceDescriptionAr: prefill.serviceDescriptionAr,
+        serviceDescriptionEn: prefill.serviceDescriptionEn,
+        amount: prefill.amount,
+      })
+    }
+  }, [prefill])
 
   const amountCents = Math.round(Number.parseFloat(formData.amount || "0") * 100)
   const platformFeeCents = Math.round(amountCents * PLATFORM_FEE_PERCENTAGE)

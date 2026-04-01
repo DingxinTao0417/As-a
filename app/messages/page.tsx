@@ -18,6 +18,9 @@ import {
   DollarSign,
   CheckCircle,
   Eye,
+  Briefcase,
+  Clock,
+  ExternalLink,
 } from "lucide-react"
 import { useState, useEffect, useRef, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
@@ -34,6 +37,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { CreateOrderDialog } from "@/components/create-order-dialog"
 import { createCheckoutSession, completeOrder, confirmOrder, verifyPayment } from "@/app/actions/orders"
 import { formatCurrency } from "@/lib/stripe"
@@ -78,6 +87,32 @@ type Order = {
   completed_at?: string
 }
 
+type ServiceCard = {
+  __type: "service_card"
+  id: string
+  name_ar: string
+  name_en: string
+  description_ar: string
+  description_en: string
+  price: number
+  price_type: string
+  category: string
+  image_url: string
+}
+
+type ProviderService = {
+  id: string
+  name_ar: string
+  name_en: string
+  description_ar: string | null
+  description_en: string | null
+  price: number
+  price_type: string
+  category: string
+  image_urls: string[]
+  is_active: boolean
+}
+
 export default function MessagesPage() {
   const { t, language } = useLanguage()
   const router = useRouter()
@@ -96,6 +131,14 @@ export default function MessagesPage() {
   const [processingPayment, setProcessingPayment] = useState(false)
   const [processingConfirmation, setProcessingConfirmation] = useState(false)
   const [processedProviderId, setProcessedProviderId] = useState<string | null>(null)
+  const [showServicesPanel, setShowServicesPanel] = useState(false)
+  const [providerServices, setProviderServices] = useState<ProviderService[]>([])
+  const [loadingServices, setLoadingServices] = useState(false)
+  const [orderPrefill, setOrderPrefill] = useState<{
+    serviceNameAr: string; serviceNameEn: string
+    serviceDescriptionAr: string; serviceDescriptionEn: string
+    amount: string
+  } | null>(null)
   
   // Realtime subscriptions
   const messagesChannelRef = useRef<RealtimeChannel | null>(null)
@@ -103,10 +146,20 @@ export default function MessagesPage() {
   const ordersChannelRef = useRef<RealtimeChannel | null>(null)
 
   useEffect(() => {
+    const supabase = createClient()
+
+    // Listen for auth state changes — redirect to login on sign-out or token errors
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") {
+        router.push("/auth/login")
+      }
+    })
+
     checkAuthAndFetchData()
-    
+
     // Cleanup subscriptions on unmount
     return () => {
+      subscription.unsubscribe()
       if (messagesChannelRef.current) {
         messagesChannelRef.current.unsubscribe()
       }
@@ -330,10 +383,10 @@ export default function MessagesPage() {
 
     console.log("[v0] ========== AUTH CHECK START ==========")
 
-    const { data } = await supabase.auth.getUser()
+    const { data, error } = await supabase.auth.getUser()
 
-    if (!data.user) {
-      console.warn("[v0] No authenticated user, redirecting to login")
+    if (error || !data.user) {
+      console.warn("[v0] No authenticated user, redirecting to login", error?.message)
       router.push("/auth/login")
       return
     }
@@ -369,6 +422,54 @@ export default function MessagesPage() {
     } catch (error) {
       console.error("[v0] Error fetching orders:", error)
     }
+  }
+
+  const parseServiceCard = (content: string): ServiceCard | null => {
+    if (!content.startsWith('{"__type":"service_card"')) return null
+    try { return JSON.parse(content) as ServiceCard } catch { return null }
+  }
+
+  const fetchProviderServices = async (providerId: string) => {
+    setLoadingServices(true)
+    const supabase = createClient()
+    const { data } = await supabase
+      .from("services")
+      .select("id, name_ar, name_en, description_ar, description_en, price, price_type, category, image_urls, is_active")
+      .eq("provider_id", providerId)
+      .eq("is_active", true)
+      .order("created_at", { ascending: false })
+    setProviderServices(data || [])
+    setLoadingServices(false)
+  }
+
+  const sendServiceCard = async (service: ProviderService) => {
+    if (!selectedConversation) return
+    const card: ServiceCard = {
+      __type: "service_card",
+      id: service.id,
+      name_ar: service.name_ar,
+      name_en: service.name_en,
+      description_ar: service.description_ar || "",
+      description_en: service.description_en || "",
+      price: service.price,
+      price_type: service.price_type,
+      category: service.category,
+      image_url: service.image_urls?.[0] || "",
+    }
+    const supabase = createClient()
+    await supabase.from("messages").insert({
+      conversation_id: selectedConversation,
+      sender_id: user.id,
+      content: JSON.stringify(card),
+    })
+    await supabase.from("conversations").update({ last_message_at: new Date().toISOString() }).eq("id", selectedConversation)
+    setShowServicesPanel(false)
+    await fetchMessages(selectedConversation)
+    setTimeout(() => {
+      if (messagesContainerRef.current) {
+        messagesContainerRef.current.scrollTo({ top: messagesContainerRef.current.scrollHeight, behavior: "smooth" })
+      }
+    }, 100)
   }
 
   const handlePayment = async (orderId: string) => {
@@ -1015,6 +1116,68 @@ export default function MessagesPage() {
                     .map((item) => {
                       if (item.type === 'message') {
                         const message = item.data as Message
+                        const serviceCard = parseServiceCard(message.content)
+
+                        if (serviceCard) {
+                          const isMine = message.sender_id === user.id
+                          const name = language === "ar" ? serviceCard.name_ar : serviceCard.name_en
+                          const desc = language === "ar" ? serviceCard.description_ar : serviceCard.description_en
+                          return (
+                            <div key={`msg-${message.id}`} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
+                              <div className="max-w-[340px] w-full">
+                                <Card className="overflow-hidden border-2 border-primary/20 shadow-sm">
+                                  {serviceCard.image_url && (
+                                    <div className="aspect-video overflow-hidden">
+                                      <img src={serviceCard.image_url} alt={name} className="w-full h-full object-cover" />
+                                    </div>
+                                  )}
+                                  <div className="p-3 space-y-2">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <p className="font-semibold text-sm leading-snug">{name}</p>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6 shrink-0 text-muted-foreground"
+                                        onClick={() => router.push(`/services/${serviceCard.id}`)}
+                                      >
+                                        <ExternalLink className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </div>
+                                    {desc && <p className="text-xs text-muted-foreground line-clamp-2">{desc}</p>}
+                                    <div className="flex items-center justify-between pt-1 border-t">
+                                      <span className="text-sm font-bold text-primary">
+                                        {serviceCard.price} {t("ر.س", "SAR")}
+                                      </span>
+                                      {currentConversation?.is_provider && (
+                                        <Button
+                                          size="sm"
+                                          className="h-7 text-xs gap-1"
+                                          onClick={() => {
+                                            setOrderPrefill({
+                                              serviceNameAr: serviceCard.name_ar,
+                                              serviceNameEn: serviceCard.name_en,
+                                              serviceDescriptionAr: serviceCard.description_ar,
+                                              serviceDescriptionEn: serviceCard.description_en,
+                                              amount: String(serviceCard.price),
+                                            })
+                                            setShowCreateOrder(true)
+                                          }}
+                                        >
+                                          <DollarSign className="h-3 w-3" />
+                                          {t("إنشاء عرض", "Quote")}
+                                        </Button>
+                                      )}
+                                    </div>
+                                    <p className="text-xs text-muted-foreground/60">
+                                      {new Date(message.created_at).toLocaleTimeString(language === "ar" ? "ar-SA" : "en-US", { hour: "2-digit", minute: "2-digit" })}
+                                    </p>
+                                  </div>
+                                </Card>
+                              </div>
+                            </div>
+                          )
+                        }
+
                         return (
                           <div
                             key={`msg-${message.id}`}
@@ -1212,6 +1375,20 @@ export default function MessagesPage() {
 
                 <div className="p-4 border-t">
                   <div className="flex gap-2">
+                    {!currentConversation.is_provider && (
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="shrink-0"
+                        title={t("تصفح الخدمات", "Browse Services")}
+                        onClick={() => {
+                          fetchProviderServices(currentConversation.provider_id)
+                          setShowServicesPanel(true)
+                        }}
+                      >
+                        <Briefcase className="h-4 w-4" />
+                      </Button>
+                    )}
                     <Input
                       value={newMessage}
                       onChange={(e) => setNewMessage(e.target.value)}
@@ -1255,9 +1432,11 @@ export default function MessagesPage() {
             conversationId={selectedConversation}
             seekerId={currentConversation.seeker_id}
             providerId={currentConversation.provider_id}
+            prefill={orderPrefill ?? undefined}
             onClose={() => {
               console.log("[v0] Closing create order dialog")
               setShowCreateOrder(false)
+              setOrderPrefill(null)
             }}
             onSuccess={() => {
               console.log("[v0] Order created successfully!")
@@ -1268,6 +1447,67 @@ export default function MessagesPage() {
           />
         </>
       )}
+
+      {/* Services Panel — seeker browses provider services */}
+      <Dialog open={showServicesPanel} onOpenChange={setShowServicesPanel}>
+        <DialogContent className="max-w-lg max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Briefcase className="h-5 w-5" />
+              {t("خدمات مقدم الخدمة", "Provider Services")}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+            {loadingServices ? (
+              <div className="flex justify-center py-10">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+              </div>
+            ) : providerServices.length === 0 ? (
+              <div className="text-center py-10 text-muted-foreground">
+                <Briefcase className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                <p>{t("لا توجد خدمات متاحة", "No services available")}</p>
+              </div>
+            ) : (
+              providerServices.map((service) => {
+                const name = language === "ar" ? service.name_ar : service.name_en
+                const desc = language === "ar" ? service.description_ar : service.description_en
+                const cover = service.image_urls?.[0]
+                return (
+                  <div key={service.id} className="flex gap-3 p-3 rounded-xl border bg-card hover:bg-muted/40 transition-colors">
+                    {cover ? (
+                      <div className="h-16 w-20 rounded-lg overflow-hidden shrink-0">
+                        <img src={cover} alt={name} className="w-full h-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="h-16 w-20 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                        <Briefcase className="h-6 w-6 text-muted-foreground/40" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm leading-snug line-clamp-1">{name}</p>
+                      {desc && <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{desc}</p>}
+                      <div className="flex items-center justify-between mt-2">
+                        <span className="text-sm font-bold text-primary">
+                          {service.price} {t("ر.س", "SAR")}
+                          {service.price_type === "hourly" && <span className="font-normal text-xs text-muted-foreground"> /{t("ساعة", "hr")}</span>}
+                        </span>
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          onClick={() => sendServiceCard(service)}
+                        >
+                          <Send className="h-3 w-3" />
+                          {t("إرسال", "Send")}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={showClearDialog} onOpenChange={setShowClearDialog}>
         <AlertDialogContent>
