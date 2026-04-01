@@ -58,6 +58,7 @@ type Conversation = {
   is_provider: boolean
   is_pinned: boolean
   is_archived: boolean
+  cleared_at: string | null
 }
 
 type Message = {
@@ -126,6 +127,7 @@ export default function MessagesPage() {
   const [isLoading, setIsLoading] = useState(true)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const [showClearDialog, setShowClearDialog] = useState(false)
+  const [showArchiveDialog, setShowArchiveDialog] = useState(false)
   const [orders, setOrders] = useState<Order[]>([])
   const [showCreateOrder, setShowCreateOrder] = useState(false)
   const [processingPayment, setProcessingPayment] = useState(false)
@@ -207,7 +209,8 @@ export default function MessagesPage() {
   // Setup Realtime subscription for messages when conversation is selected
   useEffect(() => {
     if (selectedConversation && user) {
-      fetchMessages(selectedConversation)
+      const conv = conversations.find(c => c.id === selectedConversation)
+      fetchMessages(selectedConversation, conv?.cleared_at)
       fetchOrders(selectedConversation)
       
       // Setup realtime subscription for messages
@@ -675,6 +678,7 @@ export default function MessagesPage() {
             is_provider: false,
             is_pinned: conv.is_pinned_by_seeker || false,
             is_archived: conv.is_archived_by_seeker || false,
+            cleared_at: conv.seeker_cleared_at || null,
           }
         } else {
           const seeker = seekersData?.find((s: any) => s.id === conv.seeker_id)
@@ -688,6 +692,7 @@ export default function MessagesPage() {
             is_provider: true,
             is_pinned: conv.is_pinned_by_provider || false,
             is_archived: conv.is_archived_by_provider || false,
+            cleared_at: conv.provider_cleared_at || null,
           }
         }
       })
@@ -797,7 +802,7 @@ export default function MessagesPage() {
     }
   }
 
-  const fetchMessages = async (conversationId: string) => {
+  const fetchMessages = async (conversationId: string, clearedAt?: string | null) => {
     const supabase = createClient()
 
     try {
@@ -805,11 +810,17 @@ export default function MessagesPage() {
       console.log("[v0] Conversation ID:", conversationId)
       console.log("[v0] Current user ID:", user?.id)
 
-      const { data: result, error } = await supabase
+      let query = supabase
         .from("messages")
         .select("*")
         .eq("conversation_id", conversationId)
         .order("created_at", { ascending: true })
+
+      if (clearedAt) {
+        query = query.gt("created_at", clearedAt)
+      }
+
+      const { data: result, error } = await query
 
       if (error) {
         console.error("[v0] Error fetching messages:", error)
@@ -928,17 +939,23 @@ export default function MessagesPage() {
   }
 
   const clearChat = async () => {
-    if (!selectedConversation) return
+    if (!selectedConversation || !currentConversation) return
 
     const supabase = createClient()
 
     try {
-      await supabase.from("messages").delete().eq("conversation_id", selectedConversation)
+      const field = currentConversation.is_provider ? "provider_cleared_at" : "seeker_cleared_at"
+      const { error } = await supabase
+        .from("conversations")
+        .update({ [field]: new Date().toISOString() })
+        .eq("id", selectedConversation)
 
-      await supabase.from("orders").delete().eq("conversation_id", selectedConversation).eq("status", "pending")
+      if (error) {
+        console.error("[v0] Error clearing chat:", error)
+        return
+      }
 
       setMessages([])
-      setOrders([])
       setShowClearDialog(false)
       await fetchConversations(user.id)
     } catch (error) {
@@ -1072,11 +1089,11 @@ export default function MessagesPage() {
                         {t("مسح المحادثة", "Clear Chat")}
                       </DropdownMenuItem>
                       <DropdownMenuItem
-                        onClick={() => archiveConversation(selectedConversation)}
+                        onClick={() => setShowArchiveDialog(true)}
                         className="text-destructive"
                       >
                         <Trash2 className="h-4 w-4 mr-2" />
-                        {t("حذف المحادثة", "Delete Conversation")}
+                        {t("إخفاء المحادثة", "Hide Conversation")}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -1515,8 +1532,8 @@ export default function MessagesPage() {
             <AlertDialogTitle>{t("مسح المحادثة", "Clear Chat")}</AlertDialogTitle>
             <AlertDialogDescription>
               {t(
-                "هل أنت متأكد من حذف جميع الرسائل؟ هذا الإجراء لا يمكن التراجع عنه.",
-                "Are you sure you want to delete all messages? This action cannot be undone.",
+                "سيتم إخفاء جميع الرسائل من طرفك فقط. لن يتأثر الطرف الآخر، وستظل سجلات الطلبات محفوظة.",
+                "All messages will be hidden from your side only. The other party won't be affected, and order records will remain.",
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -1524,6 +1541,29 @@ export default function MessagesPage() {
             <AlertDialogCancel>{t("إلغاء", "Cancel")}</AlertDialogCancel>
             <AlertDialogAction onClick={clearChat} className="bg-destructive text-destructive-foreground">
               {t("مسح", "Clear")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showArchiveDialog} onOpenChange={setShowArchiveDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("إخفاء المحادثة", "Hide Conversation")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                "ستُخفى هذه المحادثة من قائمتك فقط. لن يتأثر الطرف الآخر، وستظل المحادثة موجودة إذا تواصل معك مجدداً.",
+                "This conversation will be hidden from your list only. The other party won't be affected, and it will reappear if they message you again.",
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("إلغاء", "Cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => { archiveConversation(selectedConversation!); setShowArchiveDialog(false) }}
+              className="bg-destructive text-destructive-foreground"
+            >
+              {t("إخفاء", "Hide")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
