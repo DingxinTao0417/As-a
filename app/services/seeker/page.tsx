@@ -25,6 +25,7 @@ type ServiceWithProvider = {
   price_type: string
   delivery_time: string | null
   features: string[]
+  image_urls: string[]
   is_active: boolean
   provider_id: string
   providers: {
@@ -246,10 +247,21 @@ export default function TaskSeekerPage() {
                     return (
                       <Card
                         key={service.id}
-                        className="overflow-hidden hover:shadow-xl transition-all duration-300 cursor-pointer group"
+                        className="overflow-hidden hover:shadow-xl transition-all duration-300 cursor-pointer group flex flex-col"
                         onClick={() => router.push(`/services/${service.id}`)}
                       >
-                        <div className="p-6 space-y-4">
+                        {/* Service Image */}
+                        {service.image_urls && service.image_urls.length > 0 && (
+                          <div className="w-full h-48 overflow-hidden bg-muted">
+                            <img
+                              src={service.image_urls[0]}
+                              alt={name}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                          </div>
+                        )}
+
+                        <div className="p-6 flex flex-col flex-1 gap-4">
                           {/* Category & Price Type */}
                           <div className="flex items-center justify-between">
                             <Badge variant="secondary">{getCategoryLabel(service.category)}</Badge>
@@ -287,6 +299,9 @@ export default function TaskSeekerPage() {
                               <span>{service.delivery_time}</span>
                             </div>
                           )}
+
+                          {/* Spacer to push bottom sections down */}
+                          <div className="flex-1" />
 
                           {/* Price */}
                           <div className="flex items-center gap-1 pt-2 border-t">
