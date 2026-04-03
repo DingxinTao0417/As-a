@@ -27,3 +27,7 @@ yarn-error.log*
 next-env.d.ts
 
 sql.md
+
+ai_services/.venv/
+ai_services/qwen-3b/
+adapters/
