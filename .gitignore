@@ -30,4 +30,5 @@ sql.md
 
 ai_services/.venv/
 ai_services/qwen-3b/
-adapters/
+ai_service/adapters/
+ai_service/data/
