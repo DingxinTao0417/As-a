@@ -1,0 +1,28 @@
+# 1. 模型路径：指向你刚才下载的本地 qwen-3b 文件夹
+model: "./qwen-3b"
+
+# 2. 数据路径：指向包含 150 条数据的文件夹
+data: "./data"
+
+# 3. 训练核心设置
+train: true
+iters: 300
+batch_size: 2        # M4 Pro 24GB 跑 3B 模型，batch_size 设为 2 非常稳
+learning_rate: 2e-5  # 保持较小的学习率，慢工出细活
+
+# 4. LoRA 核心参数 (针对多语种记忆优化)
+lora_parameters:
+  rank: 16           # Rank 设为 16，足以应对 3 种语言的逻辑切换
+  alpha: 32
+  scale: 2.0
+  dropout: 0.05
+  # Qwen 的核心层名，确保这些层都被挂载 LoRA
+  target_modules: ["q_proj", "v_proj", "k_proj", "o_proj"]
+
+# 5. 显存与保存策略
+lora_layers: 12      # 3B 模型通常有 28 层左右，微调 12 层足够改写它的业务逻辑
+save_every: 100      # 每 100 步保存一次，防止万一中断
+test: false          # 训练完先不跑测试，手动验证更准
+
+# 6. 长度限制 (防止长文本撑爆内存)
+max_seq_length: 1024
