@@ -33,7 +33,7 @@ type ProviderRow = {
   is_active: boolean
   avatar_url: string | null
   portfolio_urls: string[]
-  stripe_account_status: string
+  tap_account_status: string | null
   created_at: string
 }
 
@@ -88,7 +88,7 @@ export default function AdminProvidersPage() {
     unverified: ["غير موثق", "Unverified"],
   }
 
-  const stripeStatusColor = (status: string) => {
+  const tapStatusColor = (status: string | null) => {
     switch (status) {
       case "active": return "bg-green-100 text-green-700"
       case "not_connected": return "bg-gray-100 text-gray-600"
@@ -148,7 +148,7 @@ export default function AdminProvidersPage() {
                 <th className="text-start px-4 py-3 font-medium">{t("الفئة", "Category")}</th>
                 <th className="text-start px-4 py-3 font-medium">{t("التقييم", "Rating")}</th>
                 <th className="text-start px-4 py-3 font-medium">{t("المشاريع", "Projects")}</th>
-                <th className="text-start px-4 py-3 font-medium">Stripe</th>
+                <th className="text-start px-4 py-3 font-medium">Tap Payment</th>
                 <th className="text-start px-4 py-3 font-medium">{t("تاريخ الانضمام", "Joined")}</th>
                 <th className="text-start px-4 py-3 font-medium">{t("الحالة", "Status")}</th>
                 <th className="text-start px-4 py-3 font-medium">{t("إجراء", "Actions")}</th>
@@ -191,8 +191,8 @@ export default function AdminProvidersPage() {
                     </td>
                     <td className="px-4 py-3 text-center">{provider.completed_projects}</td>
                     <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${stripeStatusColor(provider.stripe_account_status)}`}>
-                        {provider.stripe_account_status}
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${tapStatusColor(provider.tap_account_status)}`}>
+                        {provider.tap_account_status || "not_connected"}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">

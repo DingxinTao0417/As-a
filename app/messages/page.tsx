@@ -44,9 +44,20 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { CreateOrderDialog } from "@/components/create-order-dialog"
-import { createCheckoutSession, completeOrder, confirmOrder, verifyPayment } from "@/app/actions/orders"
-import { formatCurrency } from "@/lib/stripe"
+import { createPaymentCharge, completeOrder, confirmOrder, verifyPayment } from "@/app/actions/orders"
+import { formatCurrency } from "@/lib/tap"
 import type { RealtimeChannel } from "@supabase/supabase-js"
+
+const formatRelativeTime = (date: Date) => {
+  const diffSeconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000))
+  if (diffSeconds < 60) return "now"
+  const diffMinutes = Math.floor(diffSeconds / 60)
+  if (diffMinutes < 60) return `${diffMinutes}m ago`
+  const diffHours = Math.floor(diffMinutes / 60)
+  if (diffHours < 24) return `${diffHours}h ago`
+  const diffDays = Math.floor(diffHours / 24)
+  return `${diffDays}d ago`
+}
 
 type Conversation = {
   id: string
@@ -79,9 +90,9 @@ type Order = {
   service_name_en: string
   service_description_ar?: string
   service_description_en?: string
-  amount_cents: number
-  platform_fee_cents: number
-  provider_amount_cents: number
+  amount: number
+  platform_fee: number
+  provider_amount: number
   status: string
   created_at: string
   paid_at?: string
@@ -124,6 +135,7 @@ export default function MessagesPage() {
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState("")
+  const [searchQuery, setSearchQuery] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const [showClearDialog, setShowClearDialog] = useState(false)
@@ -151,7 +163,7 @@ export default function MessagesPage() {
     const supabase = createClient()
 
     // Listen for auth state changes — redirect to login on sign-out or token errors
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string) => {
       if (event === "SIGNED_OUT") {
         router.push("/auth/login")
       }
@@ -183,22 +195,19 @@ export default function MessagesPage() {
     }
   }, [searchParams, user])
 
-  // Handle payment callback - verify and update order status when returning from Stripe
+  // Handle payment callback - verify and update order status when returning from Tap Payment
   useEffect(() => {
     const paymentStatus = searchParams.get("payment")
     const orderId = searchParams.get("order_id")
 
-    if (paymentStatus === "success" && orderId) {
-      console.log("[v0] Payment success callback detected for order:", orderId)
+    if ((paymentStatus === "callback" || paymentStatus === "success") && orderId) {
       verifyPayment(orderId).then((result) => {
-        console.log("[v0] Payment verification result:", result)
         if (result.success) {
-          // Refresh orders for the current conversation
           if (selectedConversation) {
             fetchOrders(selectedConversation)
           }
         } else {
-          console.error("[v0] Payment verification failed:", result.error)
+          console.error("Payment verification failed:", result.error)
         }
       })
       // Clean up URL params
@@ -264,7 +273,7 @@ export default function MessagesPage() {
           table: 'messages',
           filter: `conversation_id=eq.${conversationId}`
         },
-        (payload) => {
+        (payload: any) => {
           console.log("[v0] Realtime: New message received:", payload.new)
           const newMsg = payload.new as Message
           setMessages(prev => {
@@ -294,7 +303,7 @@ export default function MessagesPage() {
           table: 'messages',
           filter: `conversation_id=eq.${conversationId}`
         },
-        (payload) => {
+        (payload: any) => {
           console.log("[v0] Realtime: Message updated:", payload.new)
           const updatedMsg = payload.new as Message
           setMessages(prev => prev.map(m => m.id === updatedMsg.id ? updatedMsg : m))
@@ -308,18 +317,18 @@ export default function MessagesPage() {
           table: 'messages',
           filter: `conversation_id=eq.${conversationId}`
         },
-        (payload) => {
+        (payload: any) => {
           console.log("[v0] Realtime: Message deleted:", payload.old)
           const deletedMsg = payload.old as Message
           setMessages(prev => prev.filter(m => m.id !== deletedMsg.id))
         }
       )
-      .subscribe((status) => {
+      .subscribe((status: any) => {
         console.log("[v0] Messages Realtime subscription status:", status)
       })
   }, [])
   
-  const setupConversationsRealtime = useCallback(() => {
+  const setupConversationsRealtime = useCallback(async () => {
     if (!user) return
     
     const supabase = createClient()
@@ -330,23 +339,41 @@ export default function MessagesPage() {
     }
     
     console.log("[v0] Setting up Realtime subscription for conversations")
+    const { data: providerProfiles } = await supabase.from("providers").select("id").eq("user_id", user.id)
+    const providerIds = providerProfiles?.map((provider: any) => provider.id).filter(Boolean) || []
+    const handleConversationChange = (payload: any) => {
+      console.log("[v0] Realtime: Conversation change detected:", payload.eventType, payload)
+      fetchConversations(user.id)
+    }
     
-    conversationsChannelRef.current = supabase
-      .channel('conversations')
+    let channel = supabase
+      .channel(`conversations-${user.id}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
-          table: 'conversations'
+          table: 'conversations',
+          filter: `seeker_id=eq.${user.id}`,
         },
-        (payload) => {
-          console.log("[v0] Realtime: Conversation change detected:", payload.eventType, payload)
-          // Refresh conversations list
-          fetchConversations(user.id)
-        }
+        handleConversationChange
       )
-      .subscribe((status) => {
+
+    if (providerIds.length > 0) {
+      channel = channel.on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversations',
+          filter: `provider_id=in.(${providerIds.join(",")})`,
+        },
+        handleConversationChange
+      )
+    }
+
+    conversationsChannelRef.current = channel
+      .subscribe((status: any) => {
         console.log("[v0] Conversations Realtime subscription status:", status)
       })
   }, [user])
@@ -371,12 +398,12 @@ export default function MessagesPage() {
           table: 'orders',
           filter: `conversation_id=eq.${conversationId}`
         },
-        (payload) => {
+        (payload: any) => {
           console.log("[v0] Realtime: Order change detected:", payload.eventType, payload)
           fetchOrders(conversationId)
         }
       )
-      .subscribe((status) => {
+      .subscribe((status: any) => {
         console.log("[v0] Orders Realtime subscription status:", status)
       })
   }, [])
@@ -478,19 +505,16 @@ export default function MessagesPage() {
   const handlePayment = async (orderId: string) => {
     setProcessingPayment(true)
     try {
-      console.log("[v0] Starting payment process for order:", orderId)
-      const result = await createCheckoutSession(orderId)
+      const result = await createPaymentCharge(orderId)
 
-      if (result.error) {
+      if (!result.success) {
         alert(result.error)
         return
       }
 
-      if (result.url) {
-        console.log("[v0] Stripe checkout URL received:", result.url)
-
+      if (result.data.url) {
         // Try to open in a new tab first (more reliable)
-        const newWindow = window.open(result.url, "_blank")
+        const newWindow = window.open(result.data.url, "_blank")
 
         // If popup blocker prevented opening, fallback to current window
         if (!newWindow || newWindow.closed || typeof newWindow.closed === "undefined") {
@@ -503,10 +527,10 @@ export default function MessagesPage() {
                 : "You will be redirected to the payment page. Click OK to continue.",
             )
           ) {
-            window.location.href = result.url
+            window.location.href = result.data.url
           }
         } else {
-          console.log("[v0] Successfully opened Stripe checkout in new tab")
+          console.log("[v0] Successfully opened Tap Payment checkout in new tab")
         }
       }
     } catch (error) {
@@ -527,7 +551,7 @@ export default function MessagesPage() {
     try {
       const result = await completeOrder(orderId)
 
-      if (result.error) {
+      if (!result.success) {
         alert(result.error)
       } else {
         alert(language === "ar" ? "تم إكمال الطلب بنجاح!" : "Order completed successfully!")
@@ -556,7 +580,7 @@ export default function MessagesPage() {
     try {
       const result = await confirmOrder(orderId)
 
-      if (result.error) {
+      if (!result.success) {
         alert(result.error)
       } else {
         alert(language === "ar" ? "تم تأكيد الطلب بنجاح!" : "Order confirmed successfully!")
@@ -834,9 +858,8 @@ export default function MessagesPage() {
       const unreadMessages = result?.filter((m: any) => !m.is_read && m.sender_id !== user.id)
       if (unreadMessages && unreadMessages.length > 0) {
         console.log("[v0] Marking", unreadMessages.length, "messages as read")
-        for (const message of unreadMessages) {
-          await supabase.from("messages").update({ is_read: true }).eq("id", message.id)
-        }
+        const unreadIds = unreadMessages.map((message: any) => message.id)
+        await supabase.from("messages").update({ is_read: true }).in("id", unreadIds)
       }
 
       if (result && result.length > 0) {
@@ -862,12 +885,13 @@ export default function MessagesPage() {
         content: newMessage,
       })
 
+      const messageContent = newMessage
       const { data, error } = await supabase
         .from("messages")
         .insert({
           conversation_id: selectedConversation,
           sender_id: user.id,
-          content: newMessage,
+          content: messageContent,
         })
         .select()
         .single()
@@ -880,7 +904,9 @@ export default function MessagesPage() {
         .eq("id", selectedConversation)
 
       setNewMessage("")
-      await fetchMessages(selectedConversation)
+      if (data) {
+        setMessages((prev) => (prev.some((message) => message.id === data.id) ? prev : [...prev, data as Message]))
+      }
       await fetchConversations(user.id)
 
       setTimeout(() => {
@@ -963,6 +989,9 @@ export default function MessagesPage() {
     }
   }
 
+  const filteredConversations = conversations.filter((conv) =>
+    !searchQuery.trim() || conv.other_party_name?.toLowerCase().includes(searchQuery.trim().toLowerCase()),
+  )
   const currentConversation = conversations.find((c) => c.id === selectedConversation)
 
   if (isLoading) {
@@ -988,12 +1017,18 @@ export default function MessagesPage() {
               <h2 className="font-bold text-xl mb-3">{t("المحادثات", "Messages")}</h2>
               <div className="relative">
                 <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input placeholder={t("بحث...", "Search...")} className="pr-10" />
+                <Input
+                  placeholder={t("بحث...", "Search...")}
+                  className="pr-10"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  aria-label={t("بحث في المحادثات", "Search conversations")}
+                />
               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto">
-              {conversations.length === 0 ? (
+              {filteredConversations.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-center p-6">
                   <MessageCircle className="h-12 w-12 text-muted-foreground mb-3" />
                   <p className="text-muted-foreground">{t("لا توجد محادثات بعد", "No conversations yet")}</p>
@@ -1002,7 +1037,7 @@ export default function MessagesPage() {
                   </Button>
                 </div>
               ) : (
-                conversations.map((conv) => (
+                filteredConversations.map((conv) => (
                   <div
                     key={conv.id}
                     className={`p-4 border-b cursor-pointer hover:bg-muted/50 transition-colors ${
@@ -1051,7 +1086,11 @@ export default function MessagesPage() {
                   </Avatar>
                   <div className="flex-1">
                     <p className="font-semibold">{currentConversation.other_party_name}</p>
-                    <p className="text-xs text-muted-foreground">{t("متصل", "Online")}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {currentConversation.last_message_at
+                        ? t("آخر نشاط ", "Last active ") + formatRelativeTime(new Date(currentConversation.last_message_at))
+                        : ""}
+                    </p>
                   </div>
 
                   {currentConversation.is_provider && userProfile?.role === "provider" && (
@@ -1240,11 +1279,11 @@ export default function MessagesPage() {
                                 <div className="bg-muted/50 rounded-lg p-3 space-y-1 text-sm">
                                   <div className="flex justify-between">
                                     <span>{t("المبلغ:", "Amount:")}</span>
-                                    <span className="font-bold">{formatCurrency(order.amount_cents)}</span>
+                                    <span className="font-bold">{formatCurrency(order.amount)}</span>
                                   </div>
                                   <div className="flex justify-between text-xs text-muted-foreground">
                                     <span>{t("رسوم المنصة:", "Platform Fee:")}</span>
-                                    <span>-{formatCurrency(order.platform_fee_cents)}</span>
+                                    <span>-{formatCurrency(order.platform_fee)}</span>
                                   </div>
                                   {order.paid_at && (
                                     <div className="flex justify-between text-xs text-muted-foreground pt-1 border-t">
@@ -1438,13 +1477,6 @@ export default function MessagesPage() {
 
       {showCreateOrder && selectedConversation && currentConversation && (
         <>
-          {console.log("[v0] ========== RENDERING CREATE ORDER DIALOG ==========")}
-          {console.log("[v0] showCreateOrder:", showCreateOrder)}
-          {console.log("[v0] selectedConversation:", selectedConversation)}
-          {console.log("[v0] currentConversation:", currentConversation)}
-          {console.log("[v0] Dialog props - conversationId:", selectedConversation)}
-          {console.log("[v0] Dialog props - seekerId:", currentConversation.seeker_id)}
-          {console.log("[v0] Dialog props - providerId:", currentConversation.provider_id)}
           <CreateOrderDialog
             conversationId={selectedConversation}
             seekerId={currentConversation.seeker_id}

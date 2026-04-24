@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, type FormEvent } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -35,6 +35,7 @@ export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [user, setUser] = useState<SupabaseUser | null>(null)
   const [userRole, setUserRole] = useState<"seeker" | "provider" | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
   const router = useRouter()
 
   useEffect(() => {
@@ -68,6 +69,14 @@ export function Header() {
     router.refresh()
   }
 
+  const handleSearch = (e: FormEvent) => {
+    e.preventDefault()
+    const query = searchQuery.trim()
+    if (query) {
+      router.push(`/services/seeker?q=${encodeURIComponent(query)}`)
+    }
+  }
+
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto px-4">
@@ -93,12 +102,18 @@ export function Header() {
           </nav>
 
           {/* Search Bar */}
-          <div className="hidden md:flex items-center gap-2 flex-1 max-w-md">
+          <form onSubmit={handleSearch} className="hidden md:flex items-center gap-2 flex-1 max-w-md">
             <div className="relative w-full">
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder={t("ما المهمة التي تريد إنجازها؟", "What task do you need done?")} className="pr-10" />
+              <Input
+                placeholder={t("ما المهمة التي تريد إنجازها؟", "What task do you need done?")}
+                className="pr-10"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                aria-label={t("بحث عن خدمات", "Search for services")}
+              />
             </div>
-          </div>
+          </form>
 
           <div className="flex items-center gap-3">
             <Button

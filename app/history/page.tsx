@@ -29,7 +29,7 @@ interface OrderHistory {
   service_name_en: string
   service_description_ar: string
   service_description_en: string
-  amount_cents: number
+  amount: number
   status: string
   completed_at: string
   review?: Review
@@ -97,7 +97,7 @@ export default function HistoryPage() {
         service_name_en: item.service_name_en,
         service_description_ar: item.service_description_ar,
         service_description_en: item.service_description_en,
-        amount_cents: item.amount_cents,
+        amount: item.amount,
         status: item.status,
         completed_at: item.completed_at || item.paid_at || item.created_at,
         review: reviewMap[item.id],
@@ -110,7 +110,7 @@ export default function HistoryPage() {
 
   useEffect(() => {
     loadHistory()
-  }, [router, language])
+  }, [router])
 
   const openReviewDialog = (order: OrderHistory) => {
     if (order.review) {
@@ -140,13 +140,18 @@ export default function HistoryPage() {
 
     if (order.review) {
       // Update
-      await supabase.from("reviews").update({
+      const { error } = await supabase.from("reviews").update({
         rating,
         comment,
       }).eq("id", order.review.id)
+      if (error) {
+        alert(t("فشل في حفظ التقييم", "Failed to save review"))
+        setSubmittingReview(false)
+        return
+      }
     } else {
       // Insert
-      await supabase.from("reviews").insert({
+      const { error } = await supabase.from("reviews").insert({
         order_id: order.id,
         service_id: order.service_id,
         reviewer_id: user.id,
@@ -154,6 +159,11 @@ export default function HistoryPage() {
         comment,
         service_name: language === "ar" ? order.service_name_ar : order.service_name_en,
       })
+      if (error) {
+        alert(t("فشل في حفظ التقييم", "Failed to save review"))
+        setSubmittingReview(false)
+        return
+      }
     }
 
     setSubmittingReview(false)
@@ -232,7 +242,7 @@ export default function HistoryPage() {
                             </div>
                             <div className="flex items-center gap-1 font-semibold text-primary">
                               <DollarSign className="h-4 w-4" />
-                              {(item.amount_cents / 100).toFixed(2)}
+                              {Number(item.amount || 0).toFixed(2)}
                             </div>
                           </div>
 
@@ -287,6 +297,7 @@ export default function HistoryPage() {
                     onClick={() => setRating(star)}
                     onMouseEnter={() => setHoverRating(star)}
                     onMouseLeave={() => setHoverRating(0)}
+                    aria-label={`${t("تقييم", "Rate")} ${star} ${t("نجوم", "stars")}`}
                     className="cursor-pointer p-0.5 transition-transform hover:scale-110"
                   >
                     <Star className={`h-8 w-8 ${star <= (hoverRating || rating)

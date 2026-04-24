@@ -127,10 +127,11 @@ export default function ProviderProfilePage() {
 
   const initials = name
     .split(" ")
+    .filter(Boolean)
     .map((n) => n[0])
     .join("")
     .toUpperCase()
-    .slice(0, 2)
+    .slice(0, 2) || "?"
 
   const stats = [
     { icon: Star, value: provider.rating.toFixed(1), label: t("التقييم", "Rating"), color: "text-yellow-500", bgColor: "bg-yellow-500/10" },

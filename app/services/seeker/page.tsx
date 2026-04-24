@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { createClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
+import Image from "next/image"
 
 type ServiceWithProvider = {
   id: string
@@ -253,9 +254,11 @@ export default function TaskSeekerPage() {
                         {/* Service Image */}
                         {service.image_urls && service.image_urls.length > 0 && (
                           <div className="w-full h-48 overflow-hidden bg-muted">
-                            <img
+                            <Image
                               src={service.image_urls[0]}
                               alt={name}
+                              width={400}
+                              height={192}
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                             />
                           </div>

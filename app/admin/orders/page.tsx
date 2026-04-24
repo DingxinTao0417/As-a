@@ -14,7 +14,7 @@ type OrderRow = {
   id: string
   service_name_ar: string
   service_name_en: string
-  amount_cents: number
+  amount: number
   status: string
   created_at: string
   paid_at: string | null
@@ -56,7 +56,7 @@ export default function AdminOrdersPage() {
       const { data, error } = await supabase
         .from("orders")
         .select(`
-          id, service_name_ar, service_name_en, amount_cents, status, created_at, paid_at,
+          id, service_name_ar, service_name_en, amount, status, created_at, paid_at,
           seeker:profiles!orders_seeker_id_fkey(email, full_name),
           provider:providers!orders_provider_id_fkey(name_ar, name_en)
         `)
@@ -186,7 +186,7 @@ export default function AdminOrdersPage() {
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1 font-semibold text-primary">
                               <DollarSign className="h-3.5 w-3.5" />
-                              {(order.amount_cents / 100).toFixed(2)}
+                              {Number(order.amount || 0).toFixed(2)}
                             </div>
                           </td>
                           <td className="px-4 py-3">

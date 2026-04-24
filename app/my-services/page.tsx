@@ -16,6 +16,7 @@ import {
 import { useState, useEffect, useRef, useMemo } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
+import NextImage from "next/image"
 import { useToast } from "@/hooks/use-toast"
 import {
   Dialog, DialogContent, DialogDescription,
@@ -385,7 +386,7 @@ export default function MyServicesPage() {
           <div className="flex flex-wrap gap-2">
             {existingImageUrls.map((url, i) => (
               <div key={i} className="relative h-20 w-24 rounded-lg overflow-hidden border group">
-                <img src={url} alt="" className="w-full h-full object-cover" />
+                <NextImage src={url} alt="" width={96} height={80} className="w-full h-full object-cover" />
                 <button type="button" onClick={() => setExistingImageUrls(p => p.filter((_, j) => j !== i))} className="absolute top-1 right-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><X className="h-3 w-3" /></button>
               </div>
             ))}
@@ -395,7 +396,7 @@ export default function MyServicesPage() {
           <div className="flex flex-wrap gap-2">
             {imagePreviews.map((src, i) => (
               <div key={i} className="relative h-20 w-24 rounded-lg overflow-hidden border group">
-                <img src={src} alt="" className="w-full h-full object-cover" />
+                <NextImage src={src} alt="" width={96} height={80} className="w-full h-full object-cover" unoptimized />
                 <button type="button" onClick={() => removeNewImage(i)} className="absolute top-1 right-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><X className="h-3 w-3" /></button>
               </div>
             ))}
@@ -531,9 +532,11 @@ export default function MyServicesPage() {
                     {/* cover image — fixed 16:9 aspect ratio */}
                     {cover ? (
                       <div className="aspect-video overflow-hidden shrink-0">
-                        <img
+                        <NextImage
                           src={cover}
                           alt={name}
+                          width={400}
+                          height={225}
                           className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300"
                         />
                       </div>
@@ -693,7 +696,7 @@ export default function MyServicesPage() {
                   <div className="flex justify-between items-start mb-2">
                     <div className="flex items-center gap-3">
                       <div className="h-10 w-10 rounded-full bg-secondary overflow-hidden flex-shrink-0 flex items-center justify-center text-sm font-bold">
-                        {review.profiles?.avatar_url ? <img src={review.profiles.avatar_url} alt="" className="w-full h-full object-cover" /> : (review.profiles?.full_name?.charAt(0) || "?")}
+                        {review.profiles?.avatar_url ? <NextImage src={review.profiles.avatar_url} alt="" width={40} height={40} className="w-full h-full object-cover" /> : (review.profiles?.full_name?.charAt(0) || "?")}
                       </div>
                       <div>
                         <p className="font-semibold text-sm">{review.profiles?.full_name || t("مستخدم", "User")}</p>

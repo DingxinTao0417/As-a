@@ -3,7 +3,8 @@
 import { useEffect, useState, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
-import { createDirectOrder, createCheckoutSession } from "@/app/actions/orders"
+import { createDirectOrder, createPaymentCharge } from "@/app/actions/orders"
+import Image from "next/image"
 import { useLanguage } from "@/components/language-provider"
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
@@ -229,25 +230,27 @@ export default function ServiceDetailPage() {
     setIsOrdering(true)
     try {
       // 1. Create a direct order and related conversation context
-      const { orderId, error: orderError } = await createDirectOrder(service.id)
+      const orderResult = await createDirectOrder(service.id)
       
-      if (orderError || !orderId) {
-        alert(orderError || "Failed to create order")
+      if (!orderResult.success) {
+        alert(orderResult.error)
         setIsOrdering(false)
         return
       }
 
-      // 2. Create Stripe checkout session
-      const { url, error: stripeError } = await createCheckoutSession(orderId)
+      const { orderId } = orderResult.data
 
-      if (stripeError || !url) {
-        alert(stripeError || "Failed to initialize checkout")
+      // 2. Create Tap payment charge
+      const paymentResult = await createPaymentCharge(orderId)
+
+      if (!paymentResult.success || !paymentResult.data.url) {
+        alert(paymentResult.success ? "Failed to initialize payment" : paymentResult.error)
         setIsOrdering(false)
         return
       }
 
-      // 3. Redirect to Stripe checkout
-      window.location.href = url
+      // 3. Redirect to Tap payment
+      window.location.href = paymentResult.data.url
     } catch (error) {
       console.error("Error creating direct order:", error)
       alert("An unexpected error occurred")
@@ -352,9 +355,11 @@ export default function ServiceDetailPage() {
                   >
                     {galleryImages.map((img, idx) => (
                       <div key={idx} className="w-full h-full flex-shrink-0">
-                        <img
+                        <Image
                           src={img}
                           alt={`${name} - ${idx + 1}`}
+                          width={800}
+                          height={500}
                           className="w-full h-full object-cover"
                         />
                       </div>
@@ -404,7 +409,7 @@ export default function ServiceDetailPage() {
                           activeImage === idx ? "ring-2 ring-primary ring-offset-2" : "opacity-60 hover:opacity-100"
                         }`}
                       >
-                        <img src={img} alt={`Thumb ${idx + 1}`} className="w-full h-full object-cover" />
+                        <Image src={img} alt={`Thumb ${idx + 1}`} width={96} height={64} className="w-full h-full object-cover" />
                       </button>
                     ))}
                   </div>

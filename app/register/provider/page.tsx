@@ -88,7 +88,7 @@ export default function BecomeProviderPage() {
         .single()
 
       // If user is a seeker, they cannot register as a provider
-      if (profile?.role === "seeker") {
+      if (!profile || profile.role === "seeker") {
         toast({
           title: t("غير مسموح", "Not Allowed"),
           description: t(
@@ -130,6 +130,24 @@ export default function BecomeProviderPage() {
     } else {
       setSelectedCategories([...selectedCategories, categoryId])
     }
+  }
+
+  const handleNextStep = () => {
+    if (step === 1) {
+      if (!formData.name_ar || !formData.name_en || !formData.title_ar || !formData.title_en) {
+        toast({ title: t("خطأ", "Error"), description: t("يرجى ملء جميع الحقول المطلوبة", "Please fill in all required fields"), variant: "destructive" })
+        return
+      }
+      if (formData.starting_price && Number.parseFloat(formData.starting_price) > 10000) {
+        toast({ title: t("خطأ", "Error"), description: t("السعر يجب أن يكون أقل من 10,000", "Price must be less than 10,000"), variant: "destructive" })
+        return
+      }
+    }
+    if (step === 2 && selectedCategories.length === 0) {
+      toast({ title: t("خطأ", "Error"), description: t("يرجى اختيار فئة واحدة على الأقل", "Please select at least one category"), variant: "destructive" })
+      return
+    }
+    setStep(step + 1)
   }
 
   const handleSubmit = async () => {
@@ -228,7 +246,7 @@ export default function BecomeProviderPage() {
         bio_en: formData.bio_en || null,
         avatar_url:
           formData.avatar_url || `/placeholder.svg?height=200&width=200&text=${encodeURIComponent(formData.name_en)}`,
-        rating: 5.0,
+        rating: 0,
         reviews_count: 0,
         completed_projects: 0,
         starting_price: Number.parseFloat(formData.starting_price) || null,
@@ -385,19 +403,19 @@ export default function BecomeProviderPage() {
                     id="starting_price"
                     type="number"
                     min="0"
-                    max="99999999"
+                    max="10000"
                     step="0.01"
                     value={formData.starting_price}
                     onChange={(e) => setFormData({ ...formData, starting_price: e.target.value })}
                     placeholder="500"
                   />
                   <p className="text-sm text-muted-foreground">
-                    {t("الحد الأقصى: 99,999,999 ريال", "Maximum: 99,999,999 SAR")}
+                    {t("الحد الأقصى: 10,000 ريال", "Maximum: 10,000 SAR")}
                   </p>
                 </div>
 
                 <div className="flex justify-end">
-                  <Button onClick={() => setStep(2)}>
+                  <Button onClick={handleNextStep}>
                     {t("التالي", "Next")}
                     <ArrowRight className="mr-2 h-4 w-4" />
                   </Button>
@@ -469,7 +487,7 @@ export default function BecomeProviderPage() {
                   <Button variant="outline" onClick={() => setStep(1)}>
                     {t("السابق", "Previous")}
                   </Button>
-                  <Button onClick={() => setStep(3)}>
+                  <Button onClick={handleNextStep}>
                     {t("التالي", "Next")}
                     <ArrowRight className="mr-2 h-4 w-4" />
                   </Button>

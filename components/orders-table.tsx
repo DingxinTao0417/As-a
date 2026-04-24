@@ -22,6 +22,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   Briefcase,
   Search,
   ArrowUpDown,
@@ -43,9 +53,9 @@ export interface Order {
   service_name_en: string
   service_description_ar: string
   service_description_en: string
-  amount_cents: number
-  platform_fee_cents: number
-  provider_amount_cents: number
+  amount: number
+  platform_fee: number
+  provider_amount: number
   status: string
   created_at: string
   paid_at: string | null
@@ -58,7 +68,7 @@ export interface Order {
   }
 }
 
-type SortField = "created_at" | "amount_cents" | "status" | "service_name"
+type SortField = "created_at" | "amount" | "status" | "service_name"
 type SortDir = "asc" | "desc"
 
 const PAGE_SIZE_OPTIONS = [5, 10, 20, 50]
@@ -131,15 +141,15 @@ function OrderDetailDialog({
     },
     {
       label: t("إجمالي المبلغ", "Total amount"),
-      value: `$${(order.amount_cents / 100).toFixed(2)}`,
+      value: `${Number(order.amount || 0).toFixed(2)} SAR`,
     },
     {
       label: t("رسوم المنصة", "Platform fee"),
-      value: `$${(order.platform_fee_cents / 100).toFixed(2)}`,
+      value: `${Number(order.platform_fee || 0).toFixed(2)} SAR`,
     },
     {
       label: t("صافي ربحك", "Your earnings"),
-      value: `$${(order.provider_amount_cents / 100).toFixed(2)}`,
+      value: `${Number(order.provider_amount || 0).toFixed(2)} SAR`,
     },
     {
       label: t("تاريخ الإنشاء", "Created at"),
@@ -163,7 +173,8 @@ function OrderDetailDialog({
     },
   ]
 
-  const canDeliver = order.status === "paid" || order.status === "pending"
+  const canDeliver = order.status === "paid"
+  const waitingForPayment = order.status === "pending"
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -207,10 +218,21 @@ function OrderDetailDialog({
             <Button
               size="sm"
               className="flex-1"
-              onClick={() => { onClose(); onComplete(order.id) }}
+              onClick={() => onComplete(order.id)}
             >
               <CheckCircle className="h-4 w-4 mr-1" />
               {t("تسليم العمل", "Deliver Work")}
+            </Button>
+          )}
+          {waitingForPayment && (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="flex-1 cursor-not-allowed"
+              disabled
+              title={t("العميل لم يدفع بعد", "The client has not paid yet")}
+            >
+              {t("بانتظار الدفع", "Waiting for payment")}
             </Button>
           )}
         </div>
@@ -221,7 +243,7 @@ function OrderDetailDialog({
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-export function OrdersTable({ orders: rawOrders }: { orders: Order[] }) {
+export function OrdersTable({ orders: rawOrders, onOrderUpdate }: { orders: Order[]; onOrderUpdate?: () => void | Promise<void> }) {
   const { t, language } = useLanguage()
   const router = useRouter()
 
@@ -240,6 +262,8 @@ export function OrdersTable({ orders: rawOrders }: { orders: Order[] }) {
 
   // ── detail dialog ──
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
+  const [deliveryOrderId, setDeliveryOrderId] = useState<string | null>(null)
+  const [delivering, setDelivering] = useState(false)
 
   // ── helpers ──
   const handleSort = (field: SortField) => {
@@ -299,8 +323,8 @@ export function OrdersTable({ orders: rawOrders }: { orders: Order[] }) {
         case "created_at":
           cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
           break
-        case "amount_cents":
-          cmp = a.amount_cents - b.amount_cents
+        case "amount":
+          cmp = a.amount - b.amount
           break
         case "status":
           cmp = a.status.localeCompare(b.status)
@@ -336,15 +360,23 @@ export function OrdersTable({ orders: rawOrders }: { orders: Order[] }) {
     router.push(`/messages?conversation=${conversationId}`)
   }, [router])
 
-  const handleComplete = useCallback(async (orderId: string) => {
-    if (!confirm(t("هل أنت متأكد من تسليم هذا الطلب؟", "Are you sure you want to deliver this order?"))) return
-    const result = await completeOrder(orderId)
+  const requestDeliveryConfirmation = useCallback((orderId: string) => {
+    setDeliveryOrderId(orderId)
+  }, [])
+
+  const handleComplete = useCallback(async () => {
+    if (!deliveryOrderId || delivering) return
+    setDelivering(true)
+    const result = await completeOrder(deliveryOrderId)
     if (result.success) {
-      window.location.reload()
+      setDeliveryOrderId(null)
+      setSelectedOrder(null)
+      await onOrderUpdate?.()
     } else {
-      alert(result.error || t("فشل في تسليم الطلب", "Failed to deliver order"))
+      alert(result.error)
     }
-  }, [t])
+    setDelivering(false)
+  }, [deliveryOrderId, delivering, onOrderUpdate])
 
   // ── page jump ──
   const handleJump = () => {
@@ -449,7 +481,7 @@ export function OrdersTable({ orders: rawOrders }: { orders: Order[] }) {
             {(
               [
                 ["created_at",   t("تاريخ الإنشاء", "Date")],
-                ["amount_cents", t("المبلغ", "Amount")],
+                ["amount", t("المبلغ", "Amount")],
                 ["status",       t("الحالة", "Status")],
                 ["service_name", t("اسم الخدمة", "Service")],
               ] as [SortField, string][]
@@ -484,7 +516,8 @@ export function OrdersTable({ orders: rawOrders }: { orders: Order[] }) {
           ) : (
             <div className="space-y-3">
               {paginated.map((order) => {
-                const canDeliver = order.status === "paid" || order.status === "pending"
+                const canDeliver = order.status === "paid"
+                const waitingForPayment = order.status === "pending"
                 return (
                   <Card
                     key={order.id}
@@ -515,7 +548,7 @@ export function OrdersTable({ orders: rawOrders }: { orders: Order[] }) {
                           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                             <span>{t("العميل:", "Client:")} <span className="text-foreground font-medium">{order.seeker.full_name}</span></span>
                             <span className="font-semibold text-green-600">
-                              {t("ربحك:", "Earning:")} ${(order.provider_amount_cents / 100).toFixed(2)}
+                              {t("ربحك:", "Earning:")} {Number(order.provider_amount || 0).toFixed(2)} SAR
                             </span>
                             <span>
                               {new Date(order.created_at).toISOString().slice(0, 10)}
@@ -533,10 +566,17 @@ export function OrdersTable({ orders: rawOrders }: { orders: Order[] }) {
                             {t("المحادثة", "Chat")}
                           </Button>
                           {canDeliver && (
-                            <Button size="sm" onClick={() => handleComplete(order.id)}>
+                            <Button size="sm" onClick={() => requestDeliveryConfirmation(order.id)}>
                               <CheckCircle className="h-3.5 w-3.5 mr-1" />
                               {t("تسليم", "Deliver")}
                             </Button>
+                          )}
+                          {waitingForPayment && (
+                            <span title={t("العميل لم يدفع بعد", "The client has not paid yet")}>
+                              <Button size="sm" variant="secondary" disabled className="cursor-not-allowed">
+                                {t("بانتظار الدفع", "Waiting for payment")}
+                              </Button>
+                            </span>
                           )}
                         </div>
                       </div>
@@ -644,9 +684,29 @@ export function OrdersTable({ orders: rawOrders }: { orders: Order[] }) {
         order={selectedOrder}
         open={!!selectedOrder}
         onClose={() => setSelectedOrder(null)}
-        onComplete={handleComplete}
+        onComplete={requestDeliveryConfirmation}
         onChat={handleGoToChat}
       />
+
+      <AlertDialog open={!!deliveryOrderId} onOpenChange={(open) => !open && !delivering && setDeliveryOrderId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("تأكيد تسليم الطلب", "Confirm delivery")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                "سيتم إرسال الطلب إلى العميل للتأكيد. لا تستخدم هذا الزر إلا بعد تسليم العمل فعلاً.",
+                "This will send the order to the client for confirmation. Only use this after the work has actually been delivered.",
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={delivering}>{t("إلغاء", "Cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={(event) => { event.preventDefault(); void handleComplete() }} disabled={delivering}>
+              {delivering ? t("جاري التسليم...", "Delivering...") : t("تأكيد التسليم", "Confirm delivery")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

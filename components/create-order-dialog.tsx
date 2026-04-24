@@ -6,10 +6,11 @@ import { useState, useEffect } from "react"
 import { useLanguage } from "./language-provider"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
+import { Label } from "./ui/label"
 import { Textarea } from "./ui/textarea"
-import { DollarSign, X } from "lucide-react"
+import { CircleDollarSign, X } from "lucide-react"
 import { createOrder } from "@/app/actions/orders"
-import { formatCurrency, PLATFORM_FEE_PERCENTAGE } from "@/lib/stripe"
+import { calculateFeesWithVAT, formatCurrency, PLATFORM_FEE_PERCENTAGE, VAT_RATE } from "@/lib/tap"
 
 interface CreateOrderDialogProps {
   conversationId: string
@@ -36,7 +37,7 @@ export function CreateOrderDialog({
   onClose,
   onSuccess,
 }: CreateOrderDialogProps) {
-  const { language } = useLanguage()
+  const { language, t } = useLanguage()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
 
@@ -60,11 +61,10 @@ export function CreateOrderDialog({
     }
   }, [prefill])
 
-  const amountCents = Math.round(Number.parseFloat(formData.amount || "0") * 100)
-  const platformFeeCents = Math.round(amountCents * PLATFORM_FEE_PERCENTAGE)
-  const providerAmountCents = amountCents - platformFeeCents
+  const amount = Math.round(Number.parseFloat(formData.amount || "0") * 100) / 100
+  const fees = calculateFeesWithVAT(amount)
 
-  const isValidAmount = amountCents >= 100 // Minimum $1.00
+  const isValidAmount = Number.parseFloat(formData.amount || "0") >= 1 // Minimum 1.00 SAR
   const canSubmit = isValidAmount && formData.serviceNameAr && formData.serviceNameEn && !loading
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -74,11 +74,11 @@ export function CreateOrderDialog({
     console.log("[v0] ========== ORDER CREATION STARTED ==========")
     console.log("[v0] Form submit triggered")
     console.log("[v0] Form data:", formData)
-    console.log("[v0] Amount validation:", { amountCents, isValidAmount, canSubmit })
+    console.log("[v0] Amount validation:", { amount, isValidAmount, canSubmit })
     console.log("[v0] IDs:", { conversationId, seekerId, providerId })
 
     if (!isValidAmount) {
-      setError(language === "ar" ? "الحد الأدنى للمبلغ هو $1.00" : "Minimum amount is $1.00")
+      setError(t("المبلغ يجب أن يكون 1 ريال على الأقل", "Amount must be at least 1.00 SAR"))
       return
     }
 
@@ -94,28 +94,22 @@ export function CreateOrderDialog({
         conversationId,
         seekerId,
         providerId,
-        amountCents,
+        amount,
       })
 
       const result = await createOrder({
         conversationId,
-        seekerId,
-        providerId,
         serviceNameAr: formData.serviceNameAr,
         serviceNameEn: formData.serviceNameEn,
         serviceDescriptionAr: formData.serviceDescriptionAr,
         serviceDescriptionEn: formData.serviceDescriptionEn,
-        amountCents,
+        amount,
         serviceId,
       })
 
-      console.log("[v0] Order creation result:", result)
-
-      if (result.error) {
-        console.error("[v0] Order creation failed:", result.error)
+      if (!result.success) {
         setError(result.error)
       } else {
-        console.log("[v0] Order created successfully")
         onSuccess()
         onClose()
       }
@@ -143,17 +137,18 @@ export function CreateOrderDialog({
         <div className="p-6">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold">{language === "ar" ? "إنشاء عرض سعر" : "Create Quote"}</h2>
-            <Button variant="ghost" size="icon" onClick={handleCloseClick}>
+            <Button variant="ghost" size="icon" onClick={handleCloseClick} aria-label={t("إغلاق", "Close")}>
               <X className="h-5 w-5" />
             </Button>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-2">
+              <Label htmlFor="service-name-ar" className="block text-sm font-medium mb-2">
                 {language === "ar" ? "اسم الخدمة (عربي)" : "Service Name (Arabic)"}
-              </label>
+              </Label>
               <Input
+                id="service-name-ar"
                 required
                 value={formData.serviceNameAr}
                 onChange={(e) => setFormData({ ...formData, serviceNameAr: e.target.value })}
@@ -162,10 +157,11 @@ export function CreateOrderDialog({
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">
+              <Label htmlFor="service-name-en" className="block text-sm font-medium mb-2">
                 {language === "ar" ? "اسم الخدمة (إنجليزي)" : "Service Name (English)"}
-              </label>
+              </Label>
               <Input
+                id="service-name-en"
                 required
                 value={formData.serviceNameEn}
                 onChange={(e) => setFormData({ ...formData, serviceNameEn: e.target.value })}
@@ -174,10 +170,11 @@ export function CreateOrderDialog({
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">
+              <Label htmlFor="service-description-ar" className="block text-sm font-medium mb-2">
                 {language === "ar" ? "وصف الخدمة (عربي)" : "Service Description (Arabic)"}
-              </label>
+              </Label>
               <Textarea
+                id="service-description-ar"
                 value={formData.serviceDescriptionAr}
                 onChange={(e) => setFormData({ ...formData, serviceDescriptionAr: e.target.value })}
                 placeholder={language === "ar" ? "أدخل تفاصيل الخدمة بالعربية" : "Enter service details in Arabic"}
@@ -186,10 +183,11 @@ export function CreateOrderDialog({
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">
+              <Label htmlFor="service-description-en" className="block text-sm font-medium mb-2">
                 {language === "ar" ? "وصف الخدمة (إنجليزي)" : "Service Description (English)"}
-              </label>
+              </Label>
               <Textarea
+                id="service-description-en"
                 value={formData.serviceDescriptionEn}
                 onChange={(e) => setFormData({ ...formData, serviceDescriptionEn: e.target.value })}
                 placeholder={language === "ar" ? "أدخل تفاصيل الخدمة بالإنجليزية" : "Enter service details in English"}
@@ -198,12 +196,13 @@ export function CreateOrderDialog({
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">
-                {language === "ar" ? "السعر (USD)" : "Price (USD)"}
-              </label>
+              <Label htmlFor="order-amount" className="block text-sm font-medium mb-2">
+                {language === "ar" ? "السعر (ر.س)" : "Price (SAR)"}
+              </Label>
               <div className="relative">
-                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                <CircleDollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <Input
+                  id="order-amount"
                   required
                   type="number"
                   min="1"
@@ -216,16 +215,24 @@ export function CreateOrderDialog({
               </div>
               {!isValidAmount && formData.amount && (
                 <p className="text-sm text-destructive mt-1">
-                  {language === "ar" ? "الحد الأدنى: $1.00" : "Minimum: $1.00"}
+                  {language === "ar" ? "الحد الأدنى: 1.00 ر.س" : "Minimum: 1.00 SAR"}
                 </p>
               )}
             </div>
 
-            {amountCents > 0 && (
+            {amount > 0 && (
               <div className="bg-muted p-4 rounded-lg space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span>{language === "ar" ? "المبلغ الإجمالي:" : "Total Amount:"}</span>
-                  <span className="font-semibold">{formatCurrency(amountCents)}</span>
+                  <span>{language === "ar" ? "المبلغ الأساسي:" : "Base Amount:"}</span>
+                  <span className="font-semibold">{formatCurrency(fees.baseAmount)}</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>{language === "ar" ? `ضريبة القيمة المضافة (${VAT_RATE * 100}%):` : `VAT (${VAT_RATE * 100}%):`}</span>
+                  <span>{formatCurrency(fees.vatAmount)}</span>
+                </div>
+                <div className="flex justify-between font-semibold pt-2 border-t">
+                  <span>{language === "ar" ? "الإجمالي شامل الضريبة:" : "Total incl. VAT:"}</span>
+                  <span className="text-primary">{formatCurrency(fees.totalAmount)}</span>
                 </div>
                 <div className="flex justify-between text-muted-foreground">
                   <span>
@@ -233,11 +240,11 @@ export function CreateOrderDialog({
                       ? `رسوم المنصة (${PLATFORM_FEE_PERCENTAGE * 100}%):`
                       : `Platform Fee (${PLATFORM_FEE_PERCENTAGE * 100}%):`}
                   </span>
-                  <span>-{formatCurrency(platformFeeCents)}</span>
+                  <span>-{formatCurrency(fees.platformFee)}</span>
                 </div>
-                <div className="flex justify-between font-semibold pt-2 border-t">
+                <div className="flex justify-between text-muted-foreground">
                   <span>{language === "ar" ? "سوف تستلم:" : "You will receive:"}</span>
-                  <span className="text-primary">{formatCurrency(providerAmountCents)}</span>
+                  <span>{formatCurrency(fees.providerAmount)}</span>
                 </div>
               </div>
             )}

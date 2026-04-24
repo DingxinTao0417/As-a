@@ -18,7 +18,7 @@ import { CheckCircle, XCircle, Clock, DollarSign } from "lucide-react"
 
 type WithdrawalRow = {
   id: string
-  amount_cents: number
+  amount: number
   status: "pending" | "approved" | "completed" | "rejected"
   requested_at: string
   processed_at: string | null
@@ -170,7 +170,7 @@ export default function AdminWithdrawalsPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 font-semibold text-primary">
                         <DollarSign className="h-3.5 w-3.5" />
-                        {(row.amount_cents / 100).toFixed(2)}
+                        {Number(row.amount || 0).toFixed(2)}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
@@ -247,7 +247,7 @@ export default function AdminWithdrawalsPage() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">{t("المبلغ", "Amount")}</span>
                   <span className="font-bold text-primary">
-                    ${(actionDialog.row.amount_cents / 100).toFixed(2)}
+                    {Number(actionDialog.row.amount || 0).toFixed(2)} SAR
                   </span>
                 </div>
               </div>
