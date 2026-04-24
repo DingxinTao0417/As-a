@@ -1,454 +1,312 @@
 "use server"
-import { getStripe, calculateFees } from "@/lib/stripe"
-import { createServerClient } from "@/lib/supabase/server"
 
-export async function createOrder(data: {
+import { AuthError, requireAuth } from "@/lib/auth"
+import { fail, ok } from "@/lib/action-result"
+import { calculateFees, createCharge, retrieveCharge } from "@/lib/tap"
+
+type OrderInput = {
   conversationId: string
-  seekerId: string
-  providerId: string
   serviceNameAr: string
   serviceNameEn: string
   serviceDescriptionAr?: string
   serviceDescriptionEn?: string
-  amountCents: number
+  amount: number
   serviceId?: string
-}) {
+}
+
+function normalizeSAR(amount: number) {
+  return Math.round(Number(amount) * 100) / 100
+}
+
+export async function createOrder(data: OrderInput) {
   try {
-    console.log("[v0] Creating order with data:", JSON.stringify(data, null, 2))
+    const { user, supabase } = await requireAuth()
+    const amount = normalizeSAR(data.amount)
 
-    // Validate amount
-    if (data.amountCents < 100) {
-      console.log("[v0] Amount too low:", data.amountCents)
-      return { error: "Amount must be at least $1.00" }
+    if (!Number.isFinite(amount) || amount < 1) {
+      return fail("Amount must be at least 1.00 SAR")
     }
 
-    // Calculate fees
-    const fees = calculateFees(data.amountCents)
-    console.log("[v0] Calculated fees:", JSON.stringify(fees, null, 2))
-
-    // Create order in database
-    const supabase = await createServerClient()
-
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser()
-    console.log("[v0] Current user:", user?.id)
-
-    if (userError || !user) {
-      console.error("[v0] User not authenticated:", userError)
-      return { error: "You must be logged in to create an order" }
-    }
-
-    console.log("[v0] Verifying provider ownership...")
-    const { data: providerCheck, error: providerError } = await supabase
-      .from("providers")
-      .select("id, user_id")
-      .eq("id", data.providerId)
+    const { data: conversation, error: convError } = await supabase
+      .from("conversations")
+      .select("seeker_id, provider_id")
+      .eq("id", data.conversationId)
       .single()
 
-    console.log("[v0] Provider check result:", {
-      found: !!providerCheck,
-      providerId: providerCheck?.id,
-      providerUserId: providerCheck?.user_id,
-      currentUserId: user.id,
-      matches: providerCheck?.user_id === user.id,
-    })
+    if (convError || !conversation) return fail("Conversation not found")
 
-    if (providerError || !providerCheck) {
-      console.error("[v0] Provider not found:", providerError)
-      return { error: "Provider profile not found" }
+    const { data: provider, error: providerError } = await supabase
+      .from("providers")
+      .select("id, user_id")
+      .eq("id", conversation.provider_id)
+      .single()
+
+    if (providerError || !provider || provider.user_id !== user.id) {
+      return fail("You can only create orders for your own provider profile")
     }
 
-    if (providerCheck.user_id !== user.id) {
-      console.error("[v0] Provider ownership mismatch:", {
-        providerUserId: providerCheck.user_id,
-        currentUserId: user.id,
-      })
-      return { error: "You can only create orders for your own provider profile" }
-    }
-
-    console.log("[v0] Provider ownership verified successfully")
-
-    const orderData: Record<string, any> = {
+    const fees = calculateFees(amount)
+    const orderData: Record<string, unknown> = {
       conversation_id: data.conversationId,
-      seeker_id: data.seekerId,
-      provider_id: data.providerId,
+      seeker_id: conversation.seeker_id,
+      provider_id: conversation.provider_id,
       service_name_ar: data.serviceNameAr,
       service_name_en: data.serviceNameEn,
       service_description_ar: data.serviceDescriptionAr || "",
       service_description_en: data.serviceDescriptionEn || "",
-      amount_cents: fees.amountCents,
-      platform_fee_cents: fees.platformFeeCents,
-      provider_amount_cents: fees.providerAmountCents,
+      amount: fees.amount,
+      platform_fee: fees.platformFee,
+      provider_amount: fees.providerAmount,
+      currency: "SAR",
       status: "pending",
+      ...(data.serviceId ? { service_id: data.serviceId } : {}),
     }
-
-    if (data.serviceId) {
-      orderData.service_id = data.serviceId
-    }
-
-    console.log("[v0] Inserting order data:", JSON.stringify(orderData, null, 2))
 
     const { data: order, error } = await supabase.from("orders").insert(orderData).select().single()
-
     if (error) {
-      console.error("[v0] Database error details:", {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code,
-      })
-      return { error: `Failed to create order: ${error.message}` }
+      console.error("Failed to create order:", error.message)
+      return fail("Failed to create order. Please try again.")
     }
 
-    console.log("[v0] Order created successfully:", order)
-    return { order }
+    return ok({ order })
   } catch (error) {
-    console.error("[v0] Unexpected error creating order:", error)
-    return { error: `Failed to create order: ${error instanceof Error ? error.message : "Unknown error"}` }
+    if (error instanceof AuthError) return fail(error.message)
+    console.error("Unexpected error creating order:", error instanceof Error ? error.message : "Unknown")
+    return fail("An unexpected error occurred")
+  }
+}
+
+export async function createPaymentCharge(orderId: string) {
+  try {
+    const { user, supabase } = await requireAuth()
+
+    const { data: order, error: orderError } = await supabase
+      .from("orders")
+      .select("id, amount, currency, service_name_en, service_description_en, provider_id, seeker_id, status")
+      .eq("id", orderId)
+      .single()
+
+    if (orderError || !order) return fail("Order not found")
+    if (order.seeker_id !== user.id) return fail("You can only pay for your own orders")
+    if (order.status !== "pending") return fail("This order has already been processed")
+
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL
+    if (!baseUrl?.startsWith("http")) {
+      console.error("NEXT_PUBLIC_SITE_URL is not configured")
+      return fail("Payment service is not configured")
+    }
+
+    const { data: profile } = await supabase.from("profiles").select("email").eq("id", user.id).single()
+    const amount = normalizeSAR(Number(order.amount))
+
+    const charge = await createCharge({
+      amount,
+      currency: order.currency || "SAR",
+      description: order.service_name_en || order.service_description_en || "Professional service",
+      customerEmail: profile?.email,
+      metadata: { order_id: orderId },
+      redirectUrl: `${baseUrl}/messages?provider=${order.provider_id}&payment=callback&order_id=${orderId}`,
+    })
+
+    await supabase.from("orders").update({ tap_charge_id: charge.id }).eq("id", orderId)
+    return ok({ url: charge.transaction?.url || charge.redirect?.url })
+  } catch (error) {
+    if (error instanceof AuthError) return fail(error.message)
+    console.error("Payment charge error:", error instanceof Error ? error.message : "Unknown")
+    return fail("Failed to create payment")
   }
 }
 
 export async function createCheckoutSession(orderId: string) {
-  try {
-    console.log("[v0] ========== CREATING CHECKOUT SESSION ==========")
-    console.log("[v0] Order ID:", orderId)
-
-    const supabase = await createServerClient()
-
-    console.log("[v0] Fetching order details...")
-    const { data: orders, error: orderError } = await supabase.from("orders").select("*").eq("id", orderId)
-
-    console.log("[v0] Orders query result:", { orders, orderError })
-
-    if (orderError || !orders || orders.length === 0) {
-      console.error("[v0] Order not found:", orderError)
-      return { error: "Order not found" }
-    }
-
-    const order = orders[0]
-    console.log("[v0] Order found:", {
-      id: order.id,
-      amount_cents: order.amount_cents,
-      service_name: order.service_name_en,
-      provider_id: order.provider_id,
-      status: order.status,
-    })
-
-    console.log("[v0] Fetching seeker email...")
-    const { data: seekers, error: seekerError } = await supabase
-      .from("profiles")
-      .select("email")
-      .eq("id", order.seeker_id)
-
-    const seekerEmail = seekers && seekers.length > 0 ? seekers[0].email : null
-    console.log("[v0] Seeker email:", seekerEmail)
-
-    console.log("[v0] Initializing Stripe...")
-    const stripe = getStripe()
-    console.log("[v0] Stripe initialized:", !!stripe)
-
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL?.startsWith("http")
-      ? process.env.NEXT_PUBLIC_SITE_URL
-      : "https://v0-professional-services-platform-ruby.vercel.app"
-
-    console.log("[v0] Base URL:", baseUrl)
-
-    const sessionConfig = {
-      payment_method_types: ["card"],
-      line_items: [
-        {
-          price_data: {
-            currency: order.currency || "usd",
-            product_data: {
-              name: order.service_name_en || "Service",
-              description: order.service_description_en || "Professional service",
-            },
-            unit_amount: order.amount_cents,
-          },
-          quantity: 1,
-        },
-      ],
-      mode: "payment" as const,
-      success_url: `${baseUrl}/messages?provider=${order.provider_id}&payment=success&order_id=${orderId}`,
-      cancel_url: `${baseUrl}/messages?payment=cancelled`,
-      metadata: {
-        order_id: orderId,
-        platform_fee_cents: order.platform_fee_cents.toString(),
-        provider_amount_cents: order.provider_amount_cents.toString(),
-      },
-    }
-
-    console.log("[v0] Creating Stripe checkout session with config:", JSON.stringify(sessionConfig, null, 2))
-
-    const session = await stripe.checkout.sessions.create(sessionConfig)
-
-    console.log("[v0] Checkout session created successfully:", {
-      id: session.id,
-      url: session.url,
-    })
-
-    console.log("[v0] Updating order with session ID...")
-    await supabase.from("orders").update({ stripe_checkout_session_id: session.id }).eq("id", orderId)
-
-    console.log("[v0] ========== CHECKOUT SESSION CREATED ==========")
-    return { url: session.url }
-  } catch (error) {
-    console.error("[v0] ========== CHECKOUT SESSION ERROR ==========")
-    console.error("[v0] Error type:", error?.constructor?.name)
-    console.error("[v0] Error message:", error instanceof Error ? error.message : String(error))
-    console.error("[v0] Error stack:", error instanceof Error ? error.stack : "No stack trace")
-    console.error("[v0] Full error:", JSON.stringify(error, Object.getOwnPropertyNames(error), 2))
-    return { error: `Failed to create checkout session: ${error instanceof Error ? error.message : "Unknown error"}` }
-  }
+  return createPaymentCharge(orderId)
 }
 
 export async function completeOrder(orderId: string) {
   try {
-    console.log("[v0] Completing order:", orderId)
+    const { user, supabase } = await requireAuth()
 
-    const supabase = await createServerClient()
-
-    const { data: order, error } = await supabase
+    const { data: order, error: orderError } = await supabase
       .from("orders")
-      .update({
-        status: "awaiting_confirmation",
-        completed_at: new Date().toISOString(),
-      })
+      .select("id, provider_id, status")
       .eq("id", orderId)
-      .select()
       .single()
 
-    if (error) {
-      console.error("[v0] Error updating order:", error)
-      return { error: "Failed to complete order" }
-    }
+    if (orderError || !order) return fail("Order not found")
 
-    console.log("[v0] Order marked as awaiting confirmation")
-    return { success: true }
+    const { data: provider } = await supabase
+      .from("providers")
+      .select("id")
+      .eq("id", order.provider_id)
+      .eq("user_id", user.id)
+      .single()
+
+    if (!provider) return fail("You can only complete your own orders")
+    if (order.status !== "paid") return fail("Only paid orders can be marked as complete")
+
+    const { data: updatedOrders, error } = await supabase
+      .from("orders")
+      .update({ status: "awaiting_confirmation", completed_at: new Date().toISOString() })
+      .eq("id", orderId)
+      .eq("status", "paid")
+      .select("id")
+
+    if (error || !updatedOrders?.length) return fail("Failed to complete order")
+    return ok(undefined)
   } catch (error) {
-    console.error("[v0] Error completing order:", error)
-    return { error: "Failed to complete order" }
+    if (error instanceof AuthError) return fail(error.message)
+    return fail("Failed to complete order")
   }
 }
 
 export async function confirmOrder(orderId: string) {
   try {
-    console.log("[v0] Confirming order completion:", orderId)
+    const { user, supabase } = await requireAuth()
 
-    const supabase = await createServerClient()
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return { error: "You must be logged in" }
-    }
-
-    // Get order details
     const { data: order, error: orderError } = await supabase.from("orders").select("*").eq("id", orderId).single()
+    if (orderError || !order) return fail("Order not found")
+    if (order.seeker_id !== user.id) return fail("You can only confirm your own orders")
+    if (order.status !== "awaiting_confirmation") return fail("This order is not ready for confirmation")
 
-    if (orderError || !order) {
-      return { error: "Order not found" }
-    }
-
-    // Verify the user is the seeker
-    if (order.seeker_id !== user.id) {
-      return { error: "You can only confirm your own orders" }
-    }
-
-    // Update order status to completed
-    const { error: updateError } = await supabase
+    const { data: confirmedOrders, error: updateError } = await supabase
       .from("orders")
-      .update({
-        status: "completed",
-      })
+      .update({ status: "completed" })
       .eq("id", orderId)
+      .eq("status", "awaiting_confirmation")
+      .select("id")
 
-    if (updateError) {
-      console.error("[v0] Error updating order:", updateError)
-      return { error: "Failed to confirm order" }
-    }
+    if (updateError || !confirmedOrders?.length) return fail("Failed to confirm order")
 
-    // Add to service history
-    await supabase.from("service_history").insert({
+    const { error: historyError } = await supabase.from("service_history").insert({
       seeker_id: order.seeker_id,
       provider_id: order.provider_id,
       service_name_ar: order.service_name_ar,
       service_name_en: order.service_name_en,
       service_description_ar: order.service_description_ar,
       service_description_en: order.service_description_en,
-      amount: order.provider_amount_cents / 100,
+      amount: order.amount,
       status: "completed",
+      order_id: order.id,
+      service_id: order.service_id,
     })
 
-    console.log("[v0] Order confirmed and added to history")
-    return { success: true }
+    if (historyError) console.error("Failed to insert service history:", historyError.message)
+    await supabase.rpc("increment_completed_projects", { p_provider_id: order.provider_id })
+
+    return ok(undefined)
   } catch (error) {
-    console.error("[v0] Error confirming order:", error)
-    return { error: "Failed to confirm order" }
+    if (error instanceof AuthError) return fail(error.message)
+    return fail("Failed to confirm order")
   }
 }
 
 export async function verifyPayment(orderId: string) {
   try {
-    console.log("[v0] Verifying payment for order:", orderId)
+    const { user, supabase } = await requireAuth()
 
-    const supabase = await createServerClient()
-
-    // Get the order with the stored checkout session ID
     const { data: order, error: orderError } = await supabase
       .from("orders")
-      .select("*")
+      .select("id, status, seeker_id, tap_charge_id")
       .eq("id", orderId)
       .single()
 
-    if (orderError || !order) {
-      console.error("[v0] Order not found:", orderError)
-      return { error: "Order not found" }
-    }
+    if (orderError || !order) return fail("Order not found")
+    if (order.seeker_id !== user.id) return fail("You can only verify your own orders")
+    if (order.status !== "pending") return ok({ status: order.status })
+    if (!order.tap_charge_id) return fail("No payment found for this order")
 
-    // If already paid, no need to verify
-    if (order.status !== "pending") {
-      console.log("[v0] Order already in status:", order.status)
-      return { success: true, status: order.status }
-    }
-
-    // Check if we have a checkout session ID
-    if (!order.stripe_checkout_session_id) {
-      console.error("[v0] No checkout session ID stored for order")
-      return { error: "No checkout session found for this order" }
-    }
-
-    // Verify the checkout session with Stripe
-    const stripe = getStripe()
-    const session = await stripe.checkout.sessions.retrieve(order.stripe_checkout_session_id)
-
-    console.log("[v0] Stripe session status:", session.payment_status)
-
-    if (session.payment_status === "paid") {
-      // Update order to paid
-      const { error: updateError } = await supabase
+    const charge = await retrieveCharge(order.tap_charge_id)
+    if (charge.status === "CAPTURED") {
+      await supabase
         .from("orders")
-        .update({
-          status: "paid",
-          stripe_payment_intent_id: session.payment_intent as string,
-          paid_at: new Date().toISOString(),
-        })
+        .update({ status: "paid", tap_transaction_id: charge.reference?.transaction || charge.id, paid_at: new Date().toISOString() })
         .eq("id", orderId)
+        .eq("status", "pending")
+        .select("id")
 
-      if (updateError) {
-        console.error("[v0] Error updating order:", updateError)
-        return { error: "Failed to update order status" }
-      }
-
-      console.log("[v0] Order updated to paid status via URL callback")
-      return { success: true, status: "paid" }
+      return ok({ status: "paid" })
     }
 
-    return { error: "Payment not completed", status: session.payment_status }
+    return fail("Payment not completed")
   } catch (error) {
-    console.error("[v0] Error verifying payment:", error)
-    return { error: `Failed to verify payment: ${error instanceof Error ? error.message : "Unknown error"}` }
+    if (error instanceof AuthError) return fail(error.message)
+    return fail("Failed to verify payment")
   }
 }
 
 export async function createDirectOrder(serviceId: string) {
   try {
-    const supabase = await createServerClient()
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    const { user, supabase } = await requireAuth()
 
-    if (userError || !user) {
-      return { error: "You must be logged in to order a service" }
-    }
-
-    // 1. Fetch Service Details
     const { data: service, error: serviceError } = await supabase
       .from("services")
-      .select("*, providers(user_id)")
+      .select("*, providers(id, user_id)")
       .eq("id", serviceId)
       .single()
 
-    if (serviceError || !service) {
-      return { error: "Service not found" }
-    }
+    if (serviceError || !service) return fail("Service not found")
 
-    // You cannot buy your own service (provider user_id == current user)
-    // Supabase returns nested relations as objects or arrays. We expect single object.
-    const providerUserId = Array.isArray(service.providers) 
-      ? service.providers[0]?.user_id 
-      : service.providers?.user_id;
+    const providerUserId = Array.isArray(service.providers) ? service.providers[0]?.user_id : service.providers?.user_id
+    if (providerUserId === user.id) return fail("You cannot purchase your own service")
 
-    if (providerUserId === user.id) {
-      return { error: "You cannot purchase your own service" }
-    }
+    const amount = normalizeSAR(Number(service.price))
+    if (!Number.isFinite(amount) || amount < 1) return fail("Service price is too low")
 
-    // 2. Determine price
-    const amountCents = Math.round(service.price * 100)
-    if (amountCents < 100) {
-      return { error: "Service price is invalid or too low" }
-    }
-    const fees = calculateFees(amountCents)
+    const { data: existingOrder } = await supabase
+      .from("orders")
+      .select("id")
+      .eq("seeker_id", user.id)
+      .eq("service_id", serviceId)
+      .eq("status", "pending")
+      .maybeSingle()
 
-    // 3. Find or create conversation
+    if (existingOrder) return ok({ orderId: existingOrder.id })
+
+    const fees = calculateFees(amount)
     let conversationId: string
     const { data: existingConv } = await supabase
       .from("conversations")
       .select("id")
       .eq("seeker_id", user.id)
       .eq("provider_id", service.provider_id)
-      .single()
+      .maybeSingle()
 
     if (existingConv) {
       conversationId = existingConv.id
     } else {
       const { data: newConv, error: convError } = await supabase
         .from("conversations")
-        .insert({
-          seeker_id: user.id,
-          provider_id: service.provider_id,
-        })
+        .insert({ seeker_id: user.id, provider_id: service.provider_id })
         .select("id")
         .single()
-        
-      if (convError || !newConv) {
-        return { error: "Failed to initialize order context" }
-      }
-      conversationId = newConv.id
-    }
 
-    // 4. Create Order
-    const orderData = {
-      conversation_id: conversationId,
-      seeker_id: user.id,
-      provider_id: service.provider_id,
-      service_id: service.id,
-      service_name_ar: service.name_ar,
-      service_name_en: service.name_en,
-      service_description_ar: service.description_ar || "",
-      service_description_en: service.description_en || "",
-      amount_cents: fees.amountCents,
-      platform_fee_cents: fees.platformFeeCents,
-      provider_amount_cents: fees.providerAmountCents,
-      status: "pending",
+      if (convError || !newConv) return fail("Failed to initialize order context")
+      conversationId = newConv.id
     }
 
     const { data: order, error: orderError } = await supabase
       .from("orders")
-      .insert(orderData)
-      .select()
+      .insert({
+        conversation_id: conversationId,
+        seeker_id: user.id,
+        provider_id: service.provider_id,
+        service_id: service.id,
+        service_name_ar: service.name_ar,
+        service_name_en: service.name_en,
+        service_description_ar: service.description_ar || "",
+        service_description_en: service.description_en || "",
+        amount: fees.amount,
+        platform_fee: fees.platformFee,
+        provider_amount: fees.providerAmount,
+        currency: "SAR",
+        status: "pending",
+      })
+      .select("id")
       .single()
 
-    if (orderError || !order) {
-      console.error("[v0] Database order error:", orderError)
-      return { error: `Failed to create order: ${orderError?.message}` }
-    }
-
-    return { orderId: order.id }
+    if (orderError || !order) return fail("Failed to create order")
+    return ok({ orderId: order.id })
   } catch (error) {
-    console.error("[v0] Unexpected error in direct order:", error)
-    return { error: "An unexpected error occurred" }
+    if (error instanceof AuthError) return fail(error.message)
+    return fail("An unexpected error occurred")
   }
 }
