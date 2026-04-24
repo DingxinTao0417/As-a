@@ -1,238 +1,99 @@
-'use client';
+"use client"
 
-import { useState, useEffect, useRef } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card } from '@/components/ui/card';
-import { X, Send, Bot, User } from 'lucide-react';
+import { useState } from "react"
+import { Bot, Send, X } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Card } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-}
+type ChatMessage = { id: string; role: "user" | "assistant"; content: string }
 
 interface AICustomerServiceChatProps {
-  onClose?: () => void;
-  language?: 'ar' | 'en';
-  userRole?: 'guest' | 'seeker' | 'provider' | 'admin' | 'both';
-  pageContext?: {
-    pagePath?: string;
-    pageTitle?: string;
-    providerId?: string;
-    serviceId?: string;
-    orderId?: string;
-  };
+  language?: "ar" | "en"
+  onClose?: () => void
 }
 
-export function AICustomerServiceChat({
-  onClose,
-  language = 'en',
-  userRole = 'guest',
-  pageContext,
-}: AICustomerServiceChatProps) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'assistant',
-      content:
-        language === 'ar'
-          ? 'مرحباً! أنا مساعد خدمة العملاء لمنصة أسعى. كيف يمكنني مساعدتك اليوم؟'
-          : "Hello! I’m the As'a customer service assistant. How can I help you today?",
-    },
-  ]);
-  const [inputValue, setInputValue] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+export function AICustomerServiceChat({ language = "en", onClose }: AICustomerServiceChatProps) {
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [input, setInput] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const content = input.trim()
+    if (!content || isLoading) return
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputValue.trim() || isLoading) return;
-
-    const userMessage = inputValue.trim();
-    setInputValue('');
-
-    const nextMessages = [...messages, { role: 'user' as const, content: userMessage }];
-    setMessages(nextMessages);
-    setIsLoading(true);
+    const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", content }
+    const nextMessages = [...messages, userMessage]
+    setMessages(nextMessages)
+    setInput("")
+    setIsLoading(true)
 
     try {
-      const response = await fetch('/api/ai-customer-service', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'send',
-          stream: true,
-          language,
-          messages: nextMessages,
-          pageContext: {
-            ...pageContext,
-            userRole,
-            locale: language,
-            pagePath:
-              pageContext?.pagePath ||
-              (typeof window !== 'undefined' ? window.location.pathname : undefined),
-          },
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || 'Failed to get response');
-      }
-
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let assistantMessage = '';
-
-      setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
-
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value);
-          const lines = chunk.split('\n');
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6);
-              if (data === '[DONE]') continue;
-
-              try {
-                const parsed = JSON.parse(data);
-                if (parsed.content) {
-                  assistantMessage += parsed.content;
-                  setMessages((prev) => {
-                    const newMessages = [...prev];
-                    newMessages[newMessages.length - 1] = {
-                      role: 'assistant',
-                      content: assistantMessage,
-                    };
-                    return newMessages;
-                  });
-                }
-              } catch (e) {
-                console.error('Parse error:', e);
-              }
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Chat error:', error);
-      setMessages((prev) => [
-        ...prev,
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: nextMessages }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || "Chat request failed")
+      setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: data.message }])
+    } catch {
+      setMessages((current) => [
+        ...current,
         {
-          role: 'assistant',
-          content:
-            language === 'ar'
-              ? 'عذراً، حدث خطأ أثناء معالجة الرسالة. جرّب مرة أخرى أو تواصل مع الدعم البشري إذا استمرت المشكلة.'
-              : 'Sorry, I had trouble processing that message. Please try again, or contact human support if the issue continues.',
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: language === "ar" ? "عذراً، خدمة الدردشة غير متاحة حالياً." : "Sorry, chat is unavailable right now.",
         },
-      ]);
+      ])
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
-  };
+  }
 
   return (
-    <Card className="fixed bottom-4 right-4 w-96 h-[600px] flex flex-col shadow-2xl z-50 border-2">
-      <div className="flex items-center justify-between p-4 border-b bg-primary text-primary-foreground">
+    <Card className="fixed bottom-4 right-4 w-[calc(100vw-2rem)] max-w-96 h-[500px] flex flex-col shadow-lg z-50 overflow-hidden">
+      <div className="flex items-center justify-between p-4 border-b">
         <div className="flex items-center gap-2">
           <Bot className="w-5 h-5" />
-          <h3 className="font-semibold">
-            {language === 'ar' ? 'خدمة العملاء' : 'Customer Service'}
-          </h3>
+          <h3 className="font-semibold">{language === "ar" ? "مساعد أسعى" : "As'a Assistant"}</h3>
         </div>
         {onClose && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-            className="hover:bg-primary-foreground/20"
-          >
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label={language === "ar" ? "إغلاق" : "Close"}>
             <X className="w-4 h-4" />
           </Button>
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-muted/30">
-        {messages.map((message, idx) => (
-          <div
-            key={idx}
-            className={`flex gap-3 ${
-              message.role === 'user' ? 'justify-end' : 'justify-start'
-            }`}
-          >
-            {message.role === 'assistant' && (
-              <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-                <Bot className="w-4 h-4 text-primary-foreground" />
-              </div>
-            )}
-
-            <div
-              className={`max-w-[75%] rounded-2xl p-3 ${
-                message.role === 'user'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-background border shadow-sm'
-              }`}
-            >
-              <p className="text-sm whitespace-pre-wrap break-words">
-                {message.content}
-              </p>
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {messages.map((msg) => (
+          <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div className={`max-w-[80%] rounded-lg p-3 text-sm whitespace-pre-wrap ${msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
+              {msg.content}
             </div>
-
-            {message.role === 'user' && (
-              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
-                <User className="w-4 h-4" />
-              </div>
-            )}
           </div>
         ))}
-
-        {isLoading && messages[messages.length - 1]?.content === '' && (
-          <div className="flex gap-3 justify-start">
-            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-              <Bot className="w-4 h-4 text-primary-foreground" />
-            </div>
-            <div className="bg-background border shadow-sm rounded-2xl p-3">
-              <div className="flex gap-1">
-                <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" />
-                <div
-                  className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"
-                  style={{ animationDelay: '0.1s' }}
-                />
-                <div
-                  className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"
-                  style={{ animationDelay: '0.2s' }}
-                />
-              </div>
-            </div>
+        {isLoading && (
+          <div className="flex justify-start">
+            <div className="bg-muted rounded-lg p-3 text-sm">...</div>
           </div>
         )}
-        <div ref={messagesEndRef} />
       </div>
 
-      <form onSubmit={handleSubmit} className="p-4 border-t bg-background">
-        <div className="flex gap-2">
-          <Input
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            placeholder={
-              language === 'ar' ? 'اكتب رسالتك...' : 'Type your message...'
-            }
-            disabled={isLoading}
-            className="flex-1"
-          />
-          <Button type="submit" size="icon" disabled={isLoading || !inputValue.trim()}>
-            <Send className="w-4 h-4" />
-          </Button>
-        </div>
+      <form onSubmit={handleSubmit} className="p-4 border-t flex gap-2">
+        <Input
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          placeholder={language === "ar" ? "اكتب رسالتك..." : "Type your message..."}
+          disabled={isLoading}
+          dir={language === "ar" ? "rtl" : "ltr"}
+          aria-label={language === "ar" ? "رسالة الدعم" : "Support message"}
+        />
+        <Button type="submit" disabled={isLoading || !input.trim()} size="icon" aria-label={language === "ar" ? "إرسال" : "Send"}>
+          <Send className="w-4 h-4" />
+        </Button>
       </form>
     </Card>
-  );
+  )
 }
