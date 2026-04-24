@@ -3,7 +3,7 @@ import type { Metadata } from "next"
 import { Cairo } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { LanguageProvider } from "@/components/language-provider"
-import { GlobalCustomerService } from "@/components/global-customer-service"
+import { GlobalCustomerServiceLoader } from "@/components/global-customer-service-loader"
 import "./globals.css"
 
 const cairo = Cairo({
@@ -43,8 +43,10 @@ export default function RootLayout({
   return (
     <html lang="ar" dir="rtl">
       <body className={`${cairo.className} font-sans antialiased`}>
-        <LanguageProvider>{children}</LanguageProvider>
-        <GlobalCustomerService />
+        <LanguageProvider>
+          {children}
+          <GlobalCustomerServiceLoader />
+        </LanguageProvider>
         <Analytics />
       </body>
     </html>
