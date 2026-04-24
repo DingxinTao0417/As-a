@@ -20,6 +20,7 @@ export interface AIModelConfig {
   modelName: string;
   modelPath?: string;
   apiEndpoint?: string;
+  apiKey?: string;
   maxTokens: number;
   temperature: number;
   topP?: number;

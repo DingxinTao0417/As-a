@@ -88,3 +88,97 @@ export class OpenAIAdapter extends BaseAIModel {
     this.initialized = false;
   }
 }
+
+/**
+ * DeepSeek adapter using DeepSeek's OpenAI-compatible Chat Completions API.
+ * Secrets must come from server-side environment variables only.
+ */
+export class DeepSeekAdapter extends BaseAIModel {
+  private readonly apiEndpoint: string;
+  private readonly apiKey?: string;
+
+  constructor(config: AIModelConfig) {
+    super(config);
+    this.apiEndpoint = config.apiEndpoint || 'https://api.deepseek.com/chat/completions';
+    this.apiKey = config.apiKey;
+  }
+
+  async initialize(): Promise<void> {
+    if (!this.apiKey) {
+      throw new Error('DEEPSEEK_API_KEY is not configured');
+    }
+
+    this.initialized = true;
+  }
+
+  async generateResponse(
+    messages: Message[],
+    context?: Record<string, any>
+  ): Promise<string> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    const response = await fetch(this.apiEndpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: this.config.modelName,
+        messages: this.toDeepSeekMessages(messages, context),
+        max_tokens: this.config.maxTokens,
+        temperature: this.config.temperature,
+        top_p: this.config.topP,
+        stream: false,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `DeepSeek API request failed with status ${response.status}: ${errorText.slice(0, 500)}`
+      );
+    }
+
+    const data = await response.json();
+    const content = data?.choices?.[0]?.message?.content;
+
+    if (typeof content !== 'string' || !content.trim()) {
+      throw new Error('DeepSeek API returned an empty response');
+    }
+
+    return content.trim();
+  }
+
+  async dispose(): Promise<void> {
+    this.initialized = false;
+  }
+
+  private toDeepSeekMessages(
+    messages: Message[],
+    context?: Record<string, any>
+  ): Array<{ role: 'system' | 'user' | 'assistant'; content: string }> {
+    const deepSeekMessages = messages.map((message) => ({
+      role: message.role,
+      content: message.content,
+    }));
+
+    const knowledgeBase = context?.knowledgeBase;
+    if (Array.isArray(knowledgeBase) && knowledgeBase.length > 0) {
+      deepSeekMessages.splice(1, 0, {
+        role: 'system',
+        content: `Relevant As'a knowledge base entries:\n${knowledgeBase
+          .map((entry: any, index: number) => {
+            const question = entry?.question || '';
+            const answer = entry?.answer || '';
+            return `${index + 1}. Q: ${question}\nA: ${answer}`;
+          })
+          .join('\n\n')}`,
+      });
+    }
+
+    return deepSeekMessages;
+  }
+}

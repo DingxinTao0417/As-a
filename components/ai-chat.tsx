@@ -14,19 +14,29 @@ interface Message {
 interface AICustomerServiceChatProps {
   onClose?: () => void;
   language?: 'ar' | 'en';
+  userRole?: 'guest' | 'seeker' | 'provider' | 'admin' | 'both';
+  pageContext?: {
+    pagePath?: string;
+    pageTitle?: string;
+    providerId?: string;
+    serviceId?: string;
+    orderId?: string;
+  };
 }
 
 export function AICustomerServiceChat({
   onClose,
   language = 'en',
+  userRole = 'guest',
+  pageContext,
 }: AICustomerServiceChatProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
       content:
         language === 'ar'
-          ? 'مرحباً! أنا مساعد خدمة العملاء لمنصة As-a. كيف يمكنني مساعدتك اليوم؟'
-          : 'Hello! I am the As-a customer service assistant. How can I help you today?',
+          ? 'مرحباً! أنا مساعد خدمة العملاء لمنصة أسعى. كيف يمكنني مساعدتك اليوم؟'
+          : "Hello! I’m the As'a customer service assistant. How can I help you today?",
     },
   ]);
   const [inputValue, setInputValue] = useState('');
@@ -44,20 +54,33 @@ export function AICustomerServiceChat({
     const userMessage = inputValue.trim();
     setInputValue('');
 
-    setMessages((prev) => [...prev, { role: 'user', content: userMessage }]);
+    const nextMessages = [...messages, { role: 'user' as const, content: userMessage }];
+    setMessages(nextMessages);
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/chat', {
+      const response = await fetch('/api/ai-customer-service', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [...messages, { role: 'user', content: userMessage }],
+          action: 'send',
+          stream: true,
+          language,
+          messages: nextMessages,
+          pageContext: {
+            ...pageContext,
+            userRole,
+            locale: language,
+            pagePath:
+              pageContext?.pagePath ||
+              (typeof window !== 'undefined' ? window.location.pathname : undefined),
+          },
         }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to get response');
+        const errorText = await response.text();
+        throw new Error(errorText || 'Failed to get response');
       }
 
       const reader = response.body?.getReader();
@@ -105,7 +128,10 @@ export function AICustomerServiceChat({
         ...prev,
         {
           role: 'assistant',
-          content: 'Sorry, I encountered an error. Please try again.',
+          content:
+            language === 'ar'
+              ? 'عذراً، حدث خطأ أثناء معالجة الرسالة. جرّب مرة أخرى أو تواصل مع الدعم البشري إذا استمرت المشكلة.'
+              : 'Sorry, I had trouble processing that message. Please try again, or contact human support if the issue continues.',
         },
       ]);
     } finally {
@@ -188,33 +214,25 @@ export function AICustomerServiceChat({
             </div>
           </div>
         )}
-
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="p-4 border-t bg-background">
-        <form onSubmit={handleSubmit} className="flex gap-2">
+      <form onSubmit={handleSubmit} className="p-4 border-t bg-background">
+        <div className="flex gap-2">
           <Input
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             placeholder={
-              language === 'ar'
-                ? 'اكتب رسالتك هنا...'
-                : 'Type your message...'
+              language === 'ar' ? 'اكتب رسالتك...' : 'Type your message...'
             }
             disabled={isLoading}
             className="flex-1"
-            dir={language === 'ar' ? 'rtl' : 'ltr'}
           />
-          <Button
-            type="submit"
-            disabled={isLoading || !inputValue.trim()}
-            size="icon"
-          >
+          <Button type="submit" size="icon" disabled={isLoading || !inputValue.trim()}>
             <Send className="w-4 h-4" />
           </Button>
-        </form>
-      </div>
+        </div>
+      </form>
     </Card>
   );
 }

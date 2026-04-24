@@ -34,3 +34,5 @@ ai_service/adapters/
 ai_service/data/
 
 .claude/
+.hermes/
+supabase/.temp/
