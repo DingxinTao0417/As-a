@@ -79,8 +79,19 @@ export function Footer() {
                   {t("الشروط والأحكام", "Terms & Conditions")}
                 </Link>
               </li>
+              <li>
+                <Link href="/privacy" className="hover:text-primary transition-colors">
+                  {t("سياسة الخصوصية", "Privacy Policy")}
+                </Link>
+              </li>
             </ul>
           </div>
+        </div>
+
+        <div className="border-t border-secondary-foreground/20 pt-4 mt-8 text-xs text-muted-foreground text-center space-y-1">
+          <p>{t("سجل تجاري رقم:", "CR No:")} XXXXXXXXXX</p>
+          <p>{t("الرقم الضريبي:", "VAT No:")} 3XXXXXXXXXXXXXXX</p>
+          <p>{t("البريد الإلكتروني:", "Email:")} support@asa.sa</p>
         </div>
 
         <div className="mt-12 pt-8 border-t border-secondary-foreground/20 text-center text-sm opacity-75">

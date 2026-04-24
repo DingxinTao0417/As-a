@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { useLanguage } from "@/components/language-provider"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Checkbox } from "@/components/ui/checkbox"
 
 export default function SignupPage() {
   const [email, setEmail] = useState("")
@@ -20,6 +21,7 @@ export default function SignupPage() {
   const [fullName, setFullName] = useState("")
   const [repeatPassword, setRepeatPassword] = useState("")
   const [role, setRole] = useState<"seeker" | "provider">("seeker")
+  const [agreedToTerms, setAgreedToTerms] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
@@ -46,6 +48,7 @@ export default function SignupPage() {
       login: "تسجيل الدخول",
       passwordMismatch: "كلمة المرور غير متطابقة",
       success: "تم إنشاء الحساب! يرجى التحقق من بريدك الإلكتروني.",
+      termsRequired: "يجب الموافقة على شروط الاستخدام وسياسة الخصوصية",
     },
     en: {
       title: "Create New Account",
@@ -67,6 +70,7 @@ export default function SignupPage() {
       login: "Login",
       passwordMismatch: "Passwords do not match",
       success: "Account created! Please check your email.",
+      termsRequired: "You must agree to the Terms of Service and Privacy Policy",
     },
   }
 
@@ -80,6 +84,12 @@ export default function SignupPage() {
 
     if (password !== repeatPassword) {
       setError(t.passwordMismatch)
+      setIsLoading(false)
+      return
+    }
+
+    if (!agreedToTerms) {
+      setError(t.termsRequired)
       setIsLoading(false)
       return
     }
@@ -199,7 +209,27 @@ export default function SignupPage() {
                 </div>
 
                 {error && <p className="text-sm text-red-500">{error}</p>}
-                <Button type="submit" className="w-full" disabled={isLoading}>
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    id="terms"
+                    checked={agreedToTerms}
+                    onCheckedChange={(checked) => setAgreedToTerms(checked === true)}
+                  />
+                  <label htmlFor="terms" className="text-sm text-muted-foreground leading-6">
+                    {language === "ar" ? (
+                      <>
+                        أوافق على <Link href="/terms" className="underline">شروط الاستخدام</Link> و{" "}
+                        <Link href="/privacy" className="underline">سياسة الخصوصية</Link>
+                      </>
+                    ) : (
+                      <>
+                        I agree to the <Link href="/terms" className="underline">Terms of Service</Link> and{" "}
+                        <Link href="/privacy" className="underline">Privacy Policy</Link>
+                      </>
+                    )}
+                  </label>
+                </div>
+                <Button type="submit" className="w-full" disabled={isLoading || !agreedToTerms}>
                   {isLoading ? t.creatingAccount : t.signupButton}
                 </Button>
               </div>

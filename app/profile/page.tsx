@@ -26,8 +26,12 @@ import {
   MessageCircle,
   Camera,
   Loader2,
+  Download,
+  Trash2,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { exportUserData } from "@/app/actions/user-data"
+import { requestAccountDeletion } from "@/app/actions/delete-account"
 
 interface Profile {
   id: string
@@ -70,6 +74,8 @@ export default function ProfilePage() {
     confirm_password: "",
   })
   const [changingPassword, setChangingPassword] = useState(false)
+  const [exportingData, setExportingData] = useState(false)
+  const [deletingAccount, setDeletingAccount] = useState(false)
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -253,10 +259,10 @@ export default function ProfilePage() {
   }
 
   const handleChangePassword = async () => {
-    if (!passwordForm.current_password) {
+    if (!passwordForm.current_password || !passwordForm.new_password || !passwordForm.confirm_password) {
       toast({
         title: t("خطأ", "Error"),
-        description: t("يرجى إدخال كلمة المرور الحالية", "Please enter your current password"),
+        description: t("يرجى ملء جميع الحقول", "Please fill in all fields"),
         variant: "destructive",
       })
       return
@@ -282,19 +288,6 @@ export default function ProfilePage() {
     try {
       const supabase = createClient()
 
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: profile.email,
-        password: passwordForm.current_password,
-      })
-      if (signInError) {
-        toast({
-          title: t("خطأ", "Error"),
-          description: t("كلمة المرور الحالية غير صحيحة", "Current password is incorrect"),
-          variant: "destructive",
-        })
-        return
-      }
-
       const { error } = await supabase.auth.updateUser({
         password: passwordForm.new_password,
       })
@@ -314,6 +307,66 @@ export default function ProfilePage() {
       })
     } finally {
       setChangingPassword(false)
+    }
+  }
+
+  const handleExportData = async () => {
+    setExportingData(true)
+    try {
+      const result = await exportUserData()
+      if (!result.success) throw new Error(result.error)
+
+      const blob = new Blob([JSON.stringify(result.data, null, 2)], { type: "application/json" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `asaa-user-data-${profile.id}-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+
+      toast({
+        title: t("تم تجهيز البيانات", "Data exported"),
+        description: t("تم تنزيل نسخة من بياناتك", "A copy of your data has been downloaded"),
+      })
+    } catch (error: any) {
+      toast({
+        title: t("فشل تصدير البيانات", "Data export failed"),
+        description: error?.message || t("تعذر تصدير بياناتك", "Unable to export your data"),
+        variant: "destructive",
+      })
+    } finally {
+      setExportingData(false)
+    }
+  }
+
+  const handleRequestDeletion = async () => {
+    const confirmed = window.confirm(
+      t(
+        "هل أنت متأكد من طلب حذف حسابك؟ سيتم تسجيل خروجك وقد لا يمكن التراجع بعد معالجة الطلب.",
+        "Are you sure you want to request account deletion? You will be signed out and the request may not be reversible once processed."
+      )
+    )
+    if (!confirmed) return
+
+    setDeletingAccount(true)
+    try {
+      const result = await requestAccountDeletion()
+      if (!result.success) throw new Error(result.error)
+      toast({
+        title: t("تم إرسال طلب الحذف", "Deletion requested"),
+        description: t("تم تسجيل خروجك بعد طلب حذف الحساب", "You have been signed out after requesting account deletion"),
+      })
+      router.push("/")
+    } catch (error: any) {
+      toast({
+        title: t("تعذر حذف الحساب", "Account deletion failed"),
+        description: error?.message || t("يرجى المحاولة لاحقاً", "Please try again later"),
+        variant: "destructive",
+      })
+    } finally {
+      setDeletingAccount(false)
     }
   }
 
@@ -493,6 +546,16 @@ export default function ProfilePage() {
 
                       {/* Password Tab */}
                       <TabsContent value="password" className="space-y-4 pt-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="current_password">{t("كلمة المرور الحالية", "Current Password")}</Label>
+                          <Input
+                            id="current_password"
+                            type="password"
+                            value={passwordForm.current_password}
+                            onChange={(e) => setPasswordForm({ ...passwordForm, current_password: e.target.value })}
+                            placeholder={t("أدخل كلمة المرور الحالية", "Enter current password")}
+                          />
+                        </div>
                         <div className="space-y-2">
                           <Label htmlFor="new_password">{t("كلمة المرور الجديدة", "New Password")}</Label>
                           <Input
@@ -697,6 +760,28 @@ export default function ProfilePage() {
                       </>
                     )
                   })()}
+                </div>
+              </div>
+
+              <div className="bg-card rounded-xl border border-destructive/20 p-5">
+                <h2 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground mb-3">
+                  {t("البيانات والخصوصية", "Data & Privacy")}
+                </h2>
+                <p className="text-sm text-muted-foreground mb-4">
+                  {t(
+                    "يمكنك تنزيل نسخة من بياناتك أو طلب حذف حسابك وفق سياسة الخصوصية.",
+                    "Download a copy of your data or request account deletion under the privacy policy."
+                  )}
+                </p>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Button variant="outline" onClick={handleExportData} disabled={exportingData} className="gap-2">
+                    <Download className="h-4 w-4" />
+                    {exportingData ? t("جاري التصدير...", "Exporting...") : t("تصدير بياناتي", "Export My Data")}
+                  </Button>
+                  <Button variant="destructive" onClick={handleRequestDeletion} disabled={deletingAccount} className="gap-2">
+                    <Trash2 className="h-4 w-4" />
+                    {deletingAccount ? t("جاري المعالجة...", "Processing...") : t("حذف حسابي", "Delete My Account")}
+                  </Button>
                 </div>
               </div>
             </div>
