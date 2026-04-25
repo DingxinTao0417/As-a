@@ -20,7 +20,6 @@ import {
   CheckCircle,
   Eye,
   Briefcase,
-  Clock,
   ExternalLink,
 } from "lucide-react"
 import { useState, useEffect, useRef, useCallback } from "react"
@@ -209,7 +208,6 @@ export default function MessagesPage() {
           if (selectedConversation) {
             fetchOrders(selectedConversation)
           }
-        } else {
         }
       })
       // Clean up URL params
@@ -321,8 +319,7 @@ export default function MessagesPage() {
           setMessages(prev => prev.filter(m => m.id !== deletedMsg.id))
         }
       )
-      .subscribe((status: any) => {
-      })
+      .subscribe()
   }, [])
   
   const setupConversationsRealtime = useCallback(async () => {
@@ -337,7 +334,7 @@ export default function MessagesPage() {
     
     const { data: providerProfiles } = await supabase.from("providers").select("id").eq("user_id", user.id)
     const providerIds = providerProfiles?.map((provider: any) => provider.id).filter(Boolean) || []
-    const handleConversationChange = (payload: any) => {
+    const handleConversationChange = () => {
       fetchConversations(user.id)
     }
     
@@ -368,8 +365,7 @@ export default function MessagesPage() {
     }
 
     conversationsChannelRef.current = channel
-      .subscribe((status: any) => {
-      })
+      .subscribe()
   }, [user])
   
   const setupOrdersRealtime = useCallback((conversationId: string) => {
@@ -391,12 +387,11 @@ export default function MessagesPage() {
           table: 'orders',
           filter: `conversation_id=eq.${conversationId}`
         },
-        (payload: any) => {
+        () => {
           fetchOrders(conversationId)
         }
       )
-      .subscribe((status: any) => {
-      })
+      .subscribe()
   }, [])
 
   const checkAuthAndFetchData = async () => {
@@ -435,7 +430,8 @@ export default function MessagesPage() {
       }
 
       setOrders(data || [])
-    } catch (error) {
+    } catch {
+      // ignored
     }
   }
 
@@ -571,24 +567,16 @@ export default function MessagesPage() {
 
     try {
 
-      const { data: seekerConvs, error: seekerError } = await supabase
+      const { data: seekerConvs } = await supabase
         .from("conversations")
         .select("*")
         .eq("seeker_id", userId)
-
-      if (seekerError) {
-      }
-      if (seekerConvs && seekerConvs.length > 0) {
-      }
 
       // Filter non-archived conversations
       const nonArchivedSeekerConvs = seekerConvs?.filter((c: any) => !c.is_archived_by_seeker) || []
 
       // Get ALL provider profiles for this user (user may have multiple)
       const { data: providerProfiles } = await supabase.from("providers").select("id").eq("user_id", userId)
-
-      if (providerProfiles && providerProfiles.length > 0) {
-      }
 
       let nonArchivedProviderConvs: any[] = []
       if (providerProfiles && providerProfiles.length > 0) {
@@ -598,9 +586,6 @@ export default function MessagesPage() {
           .from("conversations")
           .select("*")
           .in("provider_id", providerIds)
-
-        if (pConvs && pConvs.length > 0) {
-        }
 
         nonArchivedProviderConvs = pConvs?.filter((c: any) => !c.is_archived_by_provider) || []
       }
@@ -676,7 +661,8 @@ export default function MessagesPage() {
       })
 
       setConversations(uniqueConversations || [])
-    } catch (error) {
+    } catch {
+      // ignored
     }
   }
 
@@ -697,7 +683,7 @@ export default function MessagesPage() {
         return
       }
 
-      const { data: existing, error: queryError } = await supabase
+      const { data: existing } = await supabase
         .from("conversations")
         .select("*")
         .eq("seeker_id", user.id)
@@ -708,24 +694,20 @@ export default function MessagesPage() {
       if (existing) {
 
         if (existing.is_archived_by_seeker) {
-          const { error: updateError } = await supabase
+          await supabase
             .from("conversations")
             .update({
               is_archived_by_seeker: false,
               last_message_at: new Date().toISOString(),
             })
             .eq("id", existing.id)
-
-          if (updateError) {
-          } else {
-          }
         }
 
         // First refresh conversations list, then set selected
         await fetchConversations(user.id)
         setSelectedConversation(existing.id)
       } else {
-        const { data: newConv, error: createError } = await supabase
+        const { data: newConv } = await supabase
           .from("conversations")
           .insert({
             seeker_id: user.id,
@@ -744,7 +726,8 @@ export default function MessagesPage() {
       
       // Clear the URL parameter after processing
       router.replace("/messages", { scroll: false })
-    } catch (error) {
+    } catch {
+      // ignored
     }
   }
 
@@ -777,10 +760,8 @@ export default function MessagesPage() {
         const unreadIds = unreadMessages.map((message: any) => message.id)
         await supabase.from("messages").update({ is_read: true }).in("id", unreadIds)
       }
-
-      if (result && result.length > 0) {
-      }
-    } catch (error) {
+    } catch {
+      // ignored
     }
   }
 
@@ -791,7 +772,7 @@ export default function MessagesPage() {
 
     try {
       const messageContent = newMessage
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("messages")
         .insert({
           conversation_id: selectedConversation,
@@ -821,7 +802,8 @@ export default function MessagesPage() {
           })
         }
       }, 100)
-    } catch (error) {
+    } catch {
+      // ignored
     }
   }
 
@@ -839,7 +821,8 @@ export default function MessagesPage() {
         .eq("id", conversationId)
 
       await fetchConversations(user.id)
-    } catch (error) {
+    } catch {
+      // ignored
     }
   }
 
@@ -861,7 +844,8 @@ export default function MessagesPage() {
       }
 
       await fetchConversations(user.id)
-    } catch (error) {
+    } catch {
+      // ignored
     }
   }
 
@@ -884,7 +868,8 @@ export default function MessagesPage() {
       setMessages([])
       setShowClearDialog(false)
       await fetchConversations(user.id)
-    } catch (error) {
+    } catch {
+      // ignored
     }
   }
 

@@ -9,7 +9,6 @@ import {
   Search,
   Menu,
   X,
-  ChevronDown,
   Globe,
   User,
   LogOut,

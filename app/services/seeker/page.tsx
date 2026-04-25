@@ -91,7 +91,8 @@ export default function TaskSeekerPage() {
         }
 
         setServices((data as ServiceWithProvider[]) || [])
-      } catch (error) {
+      } catch {
+        // ignored
       } finally {
         setIsLoading(false)
       }

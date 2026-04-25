@@ -238,6 +238,7 @@ export default function MyServicesPage() {
       const sizeTag = dimensions.w > 0 ? `${dimensions.w}x${dimensions.h}` : "unknown"
       const filePath = `${providerId}/${serviceId}/${base}_${Date.now()}_${sizeTag}.${ext}`
       const { error } = await supabase.storage.from("service-images").upload(filePath, file, { contentType: file.type })
+      if (error) continue
       const { data: { publicUrl } } = supabase.storage.from("service-images").getPublicUrl(filePath)
       uploaded.push(publicUrl)
     }

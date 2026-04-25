@@ -190,7 +190,7 @@ export default function ProfilePage() {
 
       // Also update providers table if the user has a provider profile
       // (service pages read avatar_url from providers, not profiles)
-      const { data: providerData, error: providerError } = await supabase
+      const { error: providerError } = await supabase
         .from("providers")
         .update({ avatar_url: urlWithBust })
         .eq("user_id", profile.id)

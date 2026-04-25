@@ -29,7 +29,6 @@ import {
   Clock,
   Shield,
   User,
-  DollarSign,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 

@@ -31,7 +31,6 @@ export default function FavoritesPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [favorites, setFavorites] = useState<Favorite[]>([])
-  const [user, setUser] = useState<any>(null)
 
   useEffect(() => {
     const loadFavorites = async () => {
@@ -45,13 +44,10 @@ export default function FavoritesPage() {
         return
       }
 
-      setUser(user)
-
       // Fetch favorites with provider info
-      const { data, error } = await supabase.from("favorites").select("id, provider_id").eq("user_id", user.id)
+      const { data } = await supabase.from("favorites").select("id, provider_id").eq("user_id", user.id)
 
-      if (error) {
-      } else if (data) {
+      if (data) {
         // Fetch provider details for each favorite
         const providerIds = data.map((f: any) => f.provider_id)
         const { data: providers, error: providerError } = await supabase

@@ -254,14 +254,10 @@ export default function BecomeProviderPage() {
 
 
       // Update user's profile role to "provider"
-      const { error: profileUpdateError } = await supabase
+      await supabase
         .from("profiles")
         .update({ role: "provider" })
         .eq("id", user.id)
-
-      if (profileUpdateError) {
-      } else {
-      }
 
       toast({
         title: t("تم بنجاح!", "Success!"),

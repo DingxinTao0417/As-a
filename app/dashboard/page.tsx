@@ -93,7 +93,7 @@ export default function DashboardPage() {
         }
       }
 
-      const { data: ordersData, error: ordersError } = await supabase
+      const { data: ordersData } = await supabase
         .from("orders")
         .select(`
           id,
@@ -115,8 +115,7 @@ export default function DashboardPage() {
         .eq("provider_id", provider.id)
         .order("created_at", { ascending: false })
 
-      if (ordersData) {
-        const typedOrders = ordersData as Array<Record<string, any>>
+      if (ordersData) {        const typedOrders = ordersData as Array<Record<string, any>>
         const seekerIds = [...new Set(typedOrders.map((order) => order.seeker_id).filter(Boolean))]
         const { data: seekers } = seekerIds.length > 0
           ? await supabase.from("profiles").select("id, full_name, email").in("id", seekerIds)
