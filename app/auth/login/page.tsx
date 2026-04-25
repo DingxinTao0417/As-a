@@ -11,6 +11,8 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { useLanguage } from "@/components/language-provider"
+import { Header } from "@/components/header"
+import { Footer } from "@/components/footer"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -53,22 +55,15 @@ export default function LoginPage() {
     setIsLoading(true)
     setError(null)
 
-    console.log("[v0] Starting login process")
-
     try {
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
-      if (error) {
-        console.error("[v0] Login error:", error)
-        throw error
-      }
-      console.log("[v0] Login successful, redirecting...")
+      if (error) throw error
       router.push("/")
       router.refresh()
     } catch (error: unknown) {
-      console.error("[v0] Login failed:", error)
       setError(error instanceof Error ? error.message : "An error occurred")
     } finally {
       setIsLoading(false)
@@ -76,8 +71,10 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center p-6 md:p-10" dir={isRTL ? "rtl" : "ltr"}>
-      <div className="w-full max-w-sm">
+    <div className="min-h-screen flex flex-col" dir={isRTL ? "rtl" : "ltr"}>
+      <Header />
+      <main className="flex-1 flex items-center justify-center p-6 md:p-10">
+        <div className="w-full max-w-sm">
         <Card>
           <CardHeader>
             <CardTitle className="text-2xl">{t.title}</CardTitle>
@@ -98,7 +95,12 @@ export default function LoginPage() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="password">{t.password}</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="password">{t.password}</Label>
+                    <Link href="/auth/login" className="text-xs text-muted-foreground hover:text-primary transition-colors" tabIndex={-1}>
+                      {language === "ar" ? "نسيت كلمة المرور؟" : "Forgot password?"}
+                    </Link>
+                  </div>
                   <Input
                     id="password"
                     type="password"
@@ -122,6 +124,8 @@ export default function LoginPage() {
           </CardContent>
         </Card>
       </div>
+      </main>
+      <Footer />
     </div>
   )
 }

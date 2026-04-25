@@ -180,7 +180,7 @@ export function Header() {
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleLogout} className="text-red-600">
-                    <LogOut className="h-4 w-4 ml-2" />
+                    <LogOut className="h-4 w-4 ms-2" />
                     {t("تسجيل الخروج", "Logout")}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -191,7 +191,14 @@ export function Header() {
               </Button>
             )}
 
-            <Button variant="ghost" size="sm" className="lg:hidden" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="lg:hidden"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              aria-label={t("القائمة", "Menu")}
+              aria-expanded={mobileMenuOpen}
+            >
               {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </Button>
           </div>
@@ -245,7 +252,7 @@ export function Header() {
                     {t("الرسائل", "Messages")}
                   </Link>
                   <Button variant="ghost" size="sm" onClick={handleLogout} className="justify-start text-red-600">
-                    <LogOut className="h-4 w-4 ml-2" />
+                    <LogOut className="h-4 w-4 ms-2" />
                     {t("تسجيل الخروج", "Logout")}
                   </Button>
                 </>
@@ -261,7 +268,7 @@ export function Header() {
                 onClick={() => setLanguage(language === "ar" ? "en" : "ar")}
                 className="justify-start"
               >
-                <Globe className="h-4 w-4 ml-2" />
+                <Globe className="h-4 w-4 ms-2" />
                 {language === "ar" ? "English" : "العربية"}
               </Button>
             </nav>

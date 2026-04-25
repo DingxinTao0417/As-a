@@ -14,6 +14,8 @@ import { useState } from "react"
 import { useLanguage } from "@/components/language-provider"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Header } from "@/components/header"
+import { Footer } from "@/components/footer"
 
 export default function SignupPage() {
   const [email, setEmail] = useState("")
@@ -94,8 +96,6 @@ export default function SignupPage() {
       return
     }
 
-    console.log("[v0] Starting signup process")
-
     try {
       const { error } = await supabase.auth.signUp({
         email,
@@ -108,16 +108,11 @@ export default function SignupPage() {
           },
         },
       })
-      if (error) {
-        console.error("[v0] Signup error:", error)
-        throw error
-      }
+      if (error) throw error
 
-      console.log("[v0] Signup successful")
-      alert(t.success)
+      setError(t.success)
       router.push("/auth/login")
     } catch (error: unknown) {
-      console.error("[v0] Signup failed:", error)
       setError(error instanceof Error ? error.message : "An error occurred")
     } finally {
       setIsLoading(false)
@@ -125,8 +120,10 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center p-6 md:p-10" dir={isRTL ? "rtl" : "ltr"}>
-      <div className="w-full max-w-sm">
+    <div className="min-h-screen flex flex-col" dir={isRTL ? "rtl" : "ltr"}>
+      <Header />
+      <main className="flex-1 flex items-center justify-center p-6 md:p-10">
+        <div className="w-full max-w-sm">
         <Card>
           <CardHeader>
             <CardTitle className="text-2xl">{t.title}</CardTitle>
@@ -166,6 +163,39 @@ export default function SignupPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                   />
+                  {password && (
+                    <div className="space-y-1">
+                      <div className="flex gap-1">
+                        {[1, 2, 3, 4].map((level) => {
+                          const strength = [
+                            password.length >= 6,
+                            /[A-Z]/.test(password),
+                            /[0-9]/.test(password),
+                            /[^A-Za-z0-9]/.test(password),
+                          ].filter(Boolean).length
+                          return (
+                            <div
+                              key={level}
+                              className={`h-1 flex-1 rounded-full ${
+                                level <= strength
+                                  ? strength <= 1 ? "bg-red-500" : strength <= 2 ? "bg-amber-500" : strength <= 3 ? "bg-blue-500" : "bg-green-500"
+                                  : "bg-muted"
+                              }`}
+                            />
+                          )
+                        })}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {(() => {
+                          const s = [password.length >= 6, /[A-Z]/.test(password), /[0-9]/.test(password), /[^A-Za-z0-9]/.test(password)].filter(Boolean).length
+                          if (s <= 1) return language === "ar" ? "ضعيفة" : "Weak"
+                          if (s === 2) return language === "ar" ? "متوسطة" : "Fair"
+                          if (s === 3) return language === "ar" ? "جيدة" : "Good"
+                          return language === "ar" ? "قوية" : "Strong"
+                        })()}
+                      </p>
+                    </div>
+                  )}
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="repeat-password">{t.repeatPassword}</Label>
@@ -243,6 +273,8 @@ export default function SignupPage() {
           </CardContent>
         </Card>
       </div>
+      </main>
+      <Footer />
     </div>
   )
 }

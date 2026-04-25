@@ -151,15 +151,8 @@ export default function BecomeProviderPage() {
   }
 
   const handleSubmit = async () => {
-    console.log("[v0] Starting provider registration...")
-    console.log("[v0] Current user:", user)
-    console.log("[v0] Form data:", formData)
-    console.log("[v0] Skills:", skills)
-    console.log("[v0] Categories:", selectedCategories)
-
     // Validation
     if (!formData.name_ar || !formData.name_en) {
-      console.log("[v0] Validation failed: Missing name")
       toast({
         title: t("خطأ", "Error"),
         description: t("يرجى إدخال الاسم بالعربية والإنجليزية", "Please enter name in both Arabic and English"),
@@ -169,7 +162,6 @@ export default function BecomeProviderPage() {
     }
 
     if (!formData.title_ar || !formData.title_en) {
-      console.log("[v0] Validation failed: Missing title")
       toast({
         title: t("خطأ", "Error"),
         description: t(
@@ -184,7 +176,6 @@ export default function BecomeProviderPage() {
     if (formData.starting_price) {
       const price = Number.parseFloat(formData.starting_price)
       if (price > 99999999) {
-        console.log("[v0] Validation failed: Price too high")
         toast({
           title: t("خطأ", "Error"),
           description: t(
@@ -198,7 +189,6 @@ export default function BecomeProviderPage() {
     }
 
     if (selectedCategories.length === 0) {
-      console.log("[v0] Validation failed: No categories selected")
       toast({
         title: t("خطأ", "Error"),
         description: t("يرجى اختيار تصنيف واحد على الأقل", "Please select at least one category"),
@@ -208,7 +198,6 @@ export default function BecomeProviderPage() {
     }
 
     if (skills.length === 0) {
-      console.log("[v0] Validation failed: No skills added")
       toast({
         title: t("خطأ", "Error"),
         description: t("يرجى إضافة مهارة واحدة على الأقل", "Please add at least one skill"),
@@ -217,10 +206,7 @@ export default function BecomeProviderPage() {
       return
     }
 
-    console.log("[v0] All validations passed")
-
     if (!user || !user.id) {
-      console.error("[v0] No user found in state!")
       toast({
         title: t("خطأ", "Error"),
         description: t("يرجى تسجيل الدخول أولاً", "Please login first"),
@@ -230,14 +216,12 @@ export default function BecomeProviderPage() {
       return
     }
 
-    console.log("[v0] User ID:", user.id)
     setSubmitting(true)
 
     try {
       const supabase = createClient()
 
-      const providerData = {
-        user_id: user.id,
+      const providerData = {        user_id: user.id,
         name_ar: formData.name_ar,
         name_en: formData.name_en,
         title_ar: formData.title_ar,
@@ -260,18 +244,14 @@ export default function BecomeProviderPage() {
         hourly_rate: Number.parseFloat(formData.starting_price) || 0,
       }
 
-      console.log("[v0] Submitting provider data:", providerData)
 
       const result = await supabase.from("providers").insert(providerData).select().single()
 
-      console.log("[v0] Insert result:", result)
 
       if (result.error) {
-        console.error("[v0] Error creating provider:", result.error)
         throw result.error
       }
 
-      console.log("[v0] Provider created successfully:", result.data)
 
       // Update user's profile role to "provider"
       const { error: profileUpdateError } = await supabase
@@ -280,9 +260,7 @@ export default function BecomeProviderPage() {
         .eq("id", user.id)
 
       if (profileUpdateError) {
-        console.error("[v0] Error updating profile role:", profileUpdateError)
       } else {
-        console.log("[v0] Profile role updated to provider")
       }
 
       toast({
@@ -290,10 +268,8 @@ export default function BecomeProviderPage() {
         description: t("تم إنشاء ملفك كمقدم خدمة بنجاح", "Your provider profile has been created successfully"),
       })
 
-      console.log("[v0] Redirecting to /services/seeker...")
       router.push("/services/seeker")
     } catch (error: any) {
-      console.error("[v0] Error:", error)
       toast({
         title: t("حدث خطأ", "Error"),
         description:
@@ -396,7 +372,7 @@ export default function BecomeProviderPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="starting_price">
-                    <DollarSign className="h-4 w-4 inline ml-2" />
+                    <DollarSign className="h-4 w-4 inline ms-2" />
                     {t("السعر الابتدائي (ريال سعودي)", "Starting Price (SAR)")}
                   </Label>
                   <Input
@@ -417,7 +393,7 @@ export default function BecomeProviderPage() {
                 <div className="flex justify-end">
                   <Button onClick={handleNextStep}>
                     {t("التالي", "Next")}
-                    <ArrowRight className="mr-2 h-4 w-4" />
+                    <ArrowRight className="me-2 h-4 w-4" />
                   </Button>
                 </div>
               </CardContent>
@@ -439,7 +415,7 @@ export default function BecomeProviderPage() {
               <CardContent className="space-y-6">
                 <div className="space-y-3">
                   <Label>
-                    <Tag className="h-4 w-4 inline ml-2" />
+                    <Tag className="h-4 w-4 inline ms-2" />
                     {t("التصنيفات", "Categories")} *
                   </Label>
                   <div className="flex flex-wrap gap-2">
@@ -463,7 +439,7 @@ export default function BecomeProviderPage() {
                       id="skills"
                       value={skillInput}
                       onChange={(e) => setSkillInput(e.target.value)}
-                      onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), addSkill())}
+                      onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addSkill())}
                       placeholder={t("مثال: React، تصميم UI/UX", "Example: React, UI/UX Design")}
                     />
                     <Button type="button" onClick={addSkill} size="icon" variant="outline">
@@ -489,7 +465,7 @@ export default function BecomeProviderPage() {
                   </Button>
                   <Button onClick={handleNextStep}>
                     {t("التالي", "Next")}
-                    <ArrowRight className="mr-2 h-4 w-4" />
+                    <ArrowRight className="me-2 h-4 w-4" />
                   </Button>
                 </div>
               </CardContent>
@@ -538,12 +514,12 @@ export default function BecomeProviderPage() {
                   <Button onClick={handleSubmit} disabled={submitting} size="lg" className="bg-primary">
                     {submitting ? (
                       <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white ml-2"></div>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white ms-2"></div>
                         {t("جاري الإنشاء...", "Creating...")}
                       </>
                     ) : (
                       <>
-                        <CheckCircle2 className="ml-2 h-5 w-5" />
+                        <CheckCircle2 className="ms-2 h-5 w-5" />
                         {t("إنشاء الخدمة", "Create Service")}
                       </>
                     )}
