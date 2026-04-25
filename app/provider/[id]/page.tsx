@@ -279,7 +279,7 @@ export default function ProviderProfilePage() {
                       <div className="space-y-3">
                         <div className="flex items-start justify-between">
                           <h3 className="font-bold group-hover:text-primary transition-colors">{svcName}</h3>
-                          <Badge variant="secondary" className="text-xs ml-2 flex-shrink-0">{svc.category}</Badge>
+                          <Badge variant="secondary" className="text-xs ms-2 flex-shrink-0">{svc.category}</Badge>
                         </div>
                         {svcDesc && <p className="text-sm text-muted-foreground line-clamp-2">{svcDesc}</p>}
                         <div className="flex items-center justify-between pt-2 border-t">

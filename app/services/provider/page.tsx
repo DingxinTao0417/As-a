@@ -205,7 +205,7 @@ export default function ServiceProviderPage() {
               <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
                 <Button size="lg" className="bg-primary hover:bg-primary/90 text-lg px-8" onClick={handleStartNow}>
                   {t("ابدأ الآن مجاناً", "Start Free Now")}
-                  <ArrowRight className="mr-2 h-5 w-5" />
+                  <ArrowRight className="me-2 h-5 w-5" />
                 </Button>
                 <Button size="lg" variant="outline" className="text-lg px-8 bg-transparent" asChild>
                   <Link href="#pricing">{t("تصفح الباقات", "View Plans")}</Link>
@@ -359,7 +359,7 @@ export default function ServiceProviderPage() {
               </p>
               <Button size="lg" className="bg-primary hover:bg-primary/90 text-lg px-8" onClick={handleStartNow}>
                 {t("سجل الآن مجاناً", "Register Free Now")}
-                <ArrowRight className="mr-2 h-5 w-5" />
+                <ArrowRight className="me-2 h-5 w-5" />
               </Button>
             </div>
           </div>

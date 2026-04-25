@@ -51,7 +51,6 @@ export default function FavoritesPage() {
       const { data, error } = await supabase.from("favorites").select("id, provider_id").eq("user_id", user.id)
 
       if (error) {
-        console.error("[v0] Error fetching favorites:", error)
       } else if (data) {
         // Fetch provider details for each favorite
         const providerIds = data.map((f: any) => f.provider_id)

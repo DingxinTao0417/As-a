@@ -238,7 +238,6 @@ export default function MyServicesPage() {
       const sizeTag = dimensions.w > 0 ? `${dimensions.w}x${dimensions.h}` : "unknown"
       const filePath = `${providerId}/${serviceId}/${base}_${Date.now()}_${sizeTag}.${ext}`
       const { error } = await supabase.storage.from("service-images").upload(filePath, file, { contentType: file.type })
-      if (error) { console.error("Upload error:", error); continue }
       const { data: { publicUrl } } = supabase.storage.from("service-images").getPublicUrl(filePath)
       uploaded.push(publicUrl)
     }
@@ -446,7 +445,7 @@ export default function MyServicesPage() {
             </p>
           </div>
           <Button onClick={() => { resetForm(); setShowCreateDialog(true) }}>
-            <Plus className="h-4 w-4 mr-2" />
+            <Plus className="h-4 w-4 me-2" />
             {t("إضافة خدمة", "Add Service")}
           </Button>
         </div>
@@ -503,7 +502,7 @@ export default function MyServicesPage() {
             <h3 className="text-xl font-semibold mb-2 text-foreground">{t("لا توجد خدمات بعد", "No Services Yet")}</h3>
             <p className="mb-6">{t("ابدأ بإضافة خدمتك الأولى", "Start by adding your first service")}</p>
             <Button onClick={() => { resetForm(); setShowCreateDialog(true) }}>
-              <Plus className="h-4 w-4 mr-2" />{t("إضافة خدمة جديدة", "Add New Service")}
+              <Plus className="h-4 w-4 me-2" />{t("إضافة خدمة جديدة", "Add New Service")}
             </Button>
           </div>
         ) : processed.length === 0 ? (
@@ -616,7 +615,7 @@ export default function MyServicesPage() {
                   onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
                 >
                   {t("تحميل المزيد", "Load More")}
-                  <span className="text-muted-foreground text-xs mr-2">
+                  <span className="text-muted-foreground text-xs me-2">
                     ({visibleCount} / {processed.length})
                   </span>
                 </Button>
@@ -639,7 +638,7 @@ export default function MyServicesPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreateDialog(false)}>{t("إلغاء", "Cancel")}</Button>
             <Button onClick={handleCreate} disabled={isSaving}>
-              {isSaving ? <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />{isUploadingImages ? t("جاري رفع الصور...", "Uploading...") : t("جاري الحفظ...", "Saving...")}</> : <><Save className="h-4 w-4 mr-2" />{t("حفظ", "Save")}</>}
+              {isSaving ? <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white me-2" />{isUploadingImages ? t("جاري رفع الصور...", "Uploading...") : t("جاري الحفظ...", "Saving...")}</> : <><Save className="h-4 w-4 me-2" />{t("حفظ", "Save")}</>}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -656,7 +655,7 @@ export default function MyServicesPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowEditDialog(false)}>{t("إلغاء", "Cancel")}</Button>
             <Button onClick={handleEdit} disabled={isSaving}>
-              {isSaving ? <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />{isUploadingImages ? t("جاري رفع الصور...", "Uploading...") : t("جاري الحفظ...", "Saving...")}</> : <><Save className="h-4 w-4 mr-2" />{t("حفظ التغييرات", "Save Changes")}</>}
+              {isSaving ? <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white me-2" />{isUploadingImages ? t("جاري رفع الصور...", "Uploading...") : t("جاري الحفظ...", "Saving...")}</> : <><Save className="h-4 w-4 me-2" />{t("حفظ التغييرات", "Save Changes")}</>}
             </Button>
           </DialogFooter>
         </DialogContent>

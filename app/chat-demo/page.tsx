@@ -17,7 +17,7 @@ export default function ChatExample() {
         </p>
 
         <Button onClick={() => setShowChat(true)} size="lg">
-          <MessageCircle className="w-5 h-5 mr-2" />
+          <MessageCircle className="w-5 h-5 me-2" />
           Open Chat
         </Button>
 

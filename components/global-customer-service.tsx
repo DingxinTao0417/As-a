@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import { MessageCircle, X } from "lucide-react"
 import { useLanguage } from "./language-provider"
+import { Input } from "./ui/input"
 
 type ChatMessage = { id: string; role: "user" | "assistant"; content: string }
 
@@ -12,6 +13,11 @@ export function GlobalCustomerService() {
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const { language, t } = useLanguage()
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages, isLoading])
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -88,14 +94,14 @@ export function GlobalCustomerService() {
                 </div>
               </div>
             )}
+            <div ref={messagesEndRef} />
           </div>
 
           <form onSubmit={handleSubmit} className="p-3 border-t flex gap-2">
-            <input
+            <Input
               value={input}
               onChange={(event) => setInput(event.target.value)}
               placeholder={t("اكتب رسالتك...", "Type your message...")}
-              className="flex-1 rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary bg-background"
               dir={language === "ar" ? "rtl" : "ltr"}
               aria-label={t("رسالة الدعم", "Support message")}
             />
