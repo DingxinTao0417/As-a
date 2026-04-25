@@ -11,11 +11,23 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Clock, DollarSign, AlertCircle, LinkIcon, CheckCircle } from "lucide-react"
 import { OrdersTable, type Order } from "@/components/orders-table"
+import { useToast } from "@/hooks/use-toast"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 
 export default function DashboardPage() {
   const { t } = useLanguage()
   const router = useRouter()
+  const { toast } = useToast()
   const [loading, setLoading] = useState(true)
   const [accessDenied, setAccessDenied] = useState(false)
   const [orders, setOrders] = useState<Order[]>([])
@@ -23,6 +35,7 @@ export default function DashboardPage() {
   const [tapConnected, setTapConnected] = useState(false)
   const [tapDestinationId, setTapDestinationId] = useState<string | null>(null)
   const [connectingTap, setConnectingTap] = useState(false)
+  const [showWithdrawDialog, setShowWithdrawDialog] = useState(false)
   const [stats, setStats] = useState({
     activeOrders: 0,
     completedOrders: 0,
@@ -32,27 +45,19 @@ export default function DashboardPage() {
   })
 
   const fetchData = async () => {
-      console.log("[v0] Dashboard: Starting data fetch")
-
       const supabase = createClient()
       const {
         data: { user },
       } = await supabase.auth.getUser()
 
-      console.log("[v0] Dashboard: User check", { hasUser: !!user, userId: user?.id })
-
       if (!user) {
-        console.log("[v0] Dashboard: No user, redirecting to login")
         router.push("/auth/login")
         return
       }
 
       const { data: profiles, error: profileError } = await supabase.from("profiles").select("role").eq("id", user.id)
 
-      console.log("[v0] Dashboard: Profile query", { profiles, profileError })
-
       if (profileError || !profiles || profiles.length === 0) {
-        console.log("[v0] Dashboard: Profile error or not found", profileError)
         setAccessDenied(true)
         setLoading(false)
         return
@@ -61,7 +66,6 @@ export default function DashboardPage() {
       const profile = profiles[0]
 
       if (profile?.role !== "provider") {
-        console.log("[v0] Dashboard: User is not a provider, role:", profile?.role)
         setAccessDenied(true)
         setLoading(false)
         return
@@ -72,10 +76,7 @@ export default function DashboardPage() {
         .select("id, tap_destination_id, tap_onboarding_completed")
         .eq("user_id", user.id)
 
-      console.log("[v0] Dashboard: Provider query", { providers, providerError })
-
       if (providerError || !providers || providers.length === 0) {
-        console.log("[v0] Dashboard: Provider not found, redirecting to registration")
         router.push("/register/provider")
         return
       }
@@ -115,8 +116,6 @@ export default function DashboardPage() {
         .order("created_at", { ascending: false })
 
       if (ordersData) {
-        console.log("[v0] Dashboard: All orders data", ordersData)
-
         const typedOrders = ordersData as Array<Record<string, any>>
         const seekerIds = [...new Set(typedOrders.map((order) => order.seeker_id).filter(Boolean))]
         const { data: seekers } = seekerIds.length > 0
@@ -161,7 +160,6 @@ export default function DashboardPage() {
           pendingEarnings,
         })
 
-        console.log("[v0] Dashboard: Stats calculated", { active, completed, totalEarned, pendingEarnings })
       }
 
       setLoading(false)
@@ -178,7 +176,7 @@ export default function DashboardPage() {
       if (!tapDestinationId) {
         const createResult = await createConnectAccount()
         if (!createResult.success) {
-          alert(createResult.error)
+          toast({ title: t("خطأ", "Error"), description: createResult.error, variant: "destructive" })
           setConnectingTap(false)
           return
         }
@@ -187,53 +185,51 @@ export default function DashboardPage() {
 
       const linkResult = await createAccountLink()
       if (!linkResult.success) {
-        alert(linkResult.error)
+        toast({ title: t("خطأ", "Error"), description: linkResult.error, variant: "destructive" })
         setConnectingTap(false)
         return
       }
 
       window.location.href = linkResult.data.url
-    } catch (error) {
-      console.error("[v0] Error connecting Tap Payment:", error)
-      alert(t("حدث خطأ أثناء الاتصال بـ Tap Payment", "An error occurred while connecting to Tap Payment"))
+    } catch {
+      toast({ title: t("خطأ", "Error"), description: t("حدث خطأ أثناء الاتصال بـ Tap Payment", "An error occurred while connecting to Tap Payment"), variant: "destructive" })
       setConnectingTap(false)
     }
   }
 
   const handleWithdraw = async () => {
     if (!tapConnected) {
-      alert(t("يرجى ربط حساب Tap Payment أولاً", "Please connect your Tap Payment account first"))
+      toast({ title: t("تنبيه", "Notice"), description: t("يرجى ربط حساب Tap Payment أولاً", "Please connect your Tap Payment account first"), variant: "destructive" })
       return
     }
 
     const availableBalance = stats.totalEarned - stats.totalWithdrawn
     if (availableBalance <= 0) {
-      alert(t("لا توجد أرباح متاحة للسحب", "No earnings available to withdraw"))
+      toast({ title: t("تنبيه", "Notice"), description: t("لا توجد أرباح متاحة للسحب", "No earnings available to withdraw") })
       return
     }
 
-    if (
-      !confirm(
-        t(`هل تريد سحب ${availableBalance.toFixed(2)} ر.س؟`, `Do you want to withdraw ${availableBalance.toFixed(2)} SAR?`),
-      )
-    ) {
-      return
-    }
+    setShowWithdrawDialog(true)
+  }
 
+  const executeWithdraw = async () => {
+    setShowWithdrawDialog(false)
+    const availableBalance = stats.totalEarned - stats.totalWithdrawn
     setWithdrawing(true)
 
     const result = await createPayout(availableBalance)
 
     if (result.success) {
-      alert(
-        t(
+      toast({
+        title: t("تم بنجاح", "Success"),
+        description: t(
           "تم إرسال طلب السحب بنجاح! سيتم معالجته خلال 1-3 أيام عمل",
           "Withdrawal request submitted! It will be processed within 1-3 business days",
         ),
-      )
+      })
       await fetchData()
     } else {
-      alert(result.error)
+      toast({ title: t("خطأ", "Error"), description: result.error, variant: "destructive" })
     }
 
     setWithdrawing(false)
@@ -297,16 +293,16 @@ export default function DashboardPage() {
           </div>
 
           {!tapConnected && (
-            <Card className="mb-6 border-yellow-200 bg-yellow-50">
+            <Card className="mb-6 border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <AlertCircle className="h-5 w-5 text-yellow-600" />
+                    <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
                     <div>
-                      <p className="font-semibold text-yellow-900">
+                      <p className="font-semibold text-amber-900 dark:text-amber-100">
                         {t("ربط حساب Tap Payment مطلوب", "Tap Payment Account Connection Required")}
                       </p>
-                      <p className="text-sm text-yellow-700">
+                      <p className="text-sm text-amber-700 dark:text-amber-300">
                         {t(
                           "يرجى ربط حساب Tap Payment لتلقي المدفوعات",
                           "Please connect your Tap Payment account to receive payments",
@@ -315,7 +311,7 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <Button onClick={handleConnectTap} disabled={connectingTap}>
-                    <LinkIcon className="h-4 w-4 mr-2" />
+                    <LinkIcon className="h-4 w-4 me-2" />
                     {connectingTap ? t("جاري الاتصال...", "Connecting...") : t("ربط Tap Payment", "Connect Tap Payment")}
                   </Button>
                 </div>
@@ -349,10 +345,10 @@ export default function DashboardPage() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium">{t("أرباح معلقة", "Pending Earnings")}</CardTitle>
-                <Clock className="h-4 w-4 text-yellow-600" />
+                <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-yellow-600">{stats.pendingEarnings.toFixed(2)} SAR</div>
+                <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">{stats.pendingEarnings.toFixed(2)} SAR</div>
                 <p className="text-xs text-muted-foreground">{t("بانتظار التأكيد", "Awaiting confirmation")}</p>
               </CardContent>
             </Card>
@@ -386,6 +382,24 @@ export default function DashboardPage() {
       </main>
 
       <Footer />
+
+      <AlertDialog open={showWithdrawDialog} onOpenChange={setShowWithdrawDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("تأكيد السحب", "Confirm Withdrawal")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                `هل تريد سحب ${(stats.totalEarned - stats.totalWithdrawn).toFixed(2)} ر.س؟`,
+                `Do you want to withdraw ${(stats.totalEarned - stats.totalWithdrawn).toFixed(2)} SAR?`
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("إلغاء", "Cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={executeWithdraw}>{t("سحب", "Withdraw")}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

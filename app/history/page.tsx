@@ -12,6 +12,17 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { History, Calendar, DollarSign, Star, Edit, Trash2, ExternalLink } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { useToast } from "@/hooks/use-toast"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 interface Review {
   id: string
@@ -48,6 +59,8 @@ export default function HistoryPage() {
   const [hoverRating, setHoverRating] = useState(0)
   const [comment, setComment] = useState("")
   const [submittingReview, setSubmittingReview] = useState(false)
+  const [deleteReviewId, setDeleteReviewId] = useState<string | null>(null)
+  const { toast } = useToast()
 
   const loadHistory = async () => {
     setLoading(true)
@@ -70,7 +83,7 @@ export default function HistoryPage() {
       .order("created_at", { ascending: false })
 
     if (ordersError) {
-      console.error("[v0] Error fetching history:", ordersError)
+      // silently ignore
     }
 
     // Fetch all reviews by this seeker
@@ -124,10 +137,14 @@ export default function HistoryPage() {
   }
 
   const handleDeleteReview = async (reviewId: string) => {
-    if (!confirm(t("هل أنت متأكد من حذف التقييم؟", "Are you sure you want to delete this review?"))) return
+    setDeleteReviewId(reviewId)
+  }
 
+  const executeDeleteReview = async () => {
+    if (!deleteReviewId) return
     const supabase = createClient()
-    await supabase.from("reviews").delete().eq("id", reviewId)
+    await supabase.from("reviews").delete().eq("id", deleteReviewId)
+    setDeleteReviewId(null)
     loadHistory()
   }
 
@@ -145,7 +162,7 @@ export default function HistoryPage() {
         comment,
       }).eq("id", order.review.id)
       if (error) {
-        alert(t("فشل في حفظ التقييم", "Failed to save review"))
+        toast({ title: t("خطأ", "Error"), description: t("فشل في حفظ التقييم", "Failed to save review"), variant: "destructive" })
         setSubmittingReview(false)
         return
       }
@@ -160,7 +177,7 @@ export default function HistoryPage() {
         service_name: language === "ar" ? order.service_name_ar : order.service_name_en,
       })
       if (error) {
-        alert(t("فشل في حفظ التقييم", "Failed to save review"))
+        toast({ title: t("خطأ", "Error"), description: t("فشل في حفظ التقييم", "Failed to save review"), variant: "destructive" })
         setSubmittingReview(false)
         return
       }
@@ -255,8 +272,8 @@ export default function HistoryPage() {
                               </Button>
                             ) : (
                               <>
-                                <div className="flex items-center bg-muted px-3 py-1.5 rounded-full text-xs font-medium mr-2">
-                                  <Star className="h-3 w-3 fill-yellow-400 text-yellow-400 mr-1" />
+                                <div className="flex items-center bg-muted px-3 py-1.5 rounded-full text-xs font-medium me-2">
+                                  <Star className="h-3 w-3 fill-yellow-400 text-yellow-400 me-1" />
                                   {item.review.rating}/5
                                 </div>
                                 <Button size="sm" variant="ghost" onClick={() => openReviewDialog(item)}>
@@ -328,6 +345,23 @@ export default function HistoryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteReviewId} onOpenChange={(open) => !open && setDeleteReviewId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("حذف التقييم", "Delete Review")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("هل أنت متأكد من حذف التقييم؟", "Are you sure you want to delete this review?")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("إلغاء", "Cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={executeDeleteReview} className="bg-destructive text-destructive-foreground">
+              {t("حذف", "Delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Footer />
     </div>

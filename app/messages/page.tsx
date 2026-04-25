@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useLanguage } from "@/components/language-provider"
+import Image from "next/image"
 import {
   MessageCircle,
   Send,
@@ -46,6 +47,7 @@ import {
 import { CreateOrderDialog } from "@/components/create-order-dialog"
 import { createPaymentCharge, completeOrder, confirmOrder, verifyPayment } from "@/app/actions/orders"
 import { formatCurrency } from "@/lib/tap"
+import { useToast } from "@/hooks/use-toast"
 import type { RealtimeChannel } from "@supabase/supabase-js"
 
 const formatRelativeTime = (date: Date) => {
@@ -129,6 +131,7 @@ export default function MessagesPage() {
   const { t, language } = useLanguage()
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { toast } = useToast()
   const [user, setUser] = useState<any>(null)
   const [userProfile, setUserProfile] = useState<any>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -207,7 +210,6 @@ export default function MessagesPage() {
             fetchOrders(selectedConversation)
           }
         } else {
-          console.error("Payment verification failed:", result.error)
         }
       })
       // Clean up URL params
@@ -261,7 +263,6 @@ export default function MessagesPage() {
       messagesChannelRef.current.unsubscribe()
     }
     
-    console.log("[v0] Setting up Realtime subscription for messages in conversation:", conversationId)
     
     messagesChannelRef.current = supabase
       .channel(`messages:${conversationId}`)
@@ -274,7 +275,6 @@ export default function MessagesPage() {
           filter: `conversation_id=eq.${conversationId}`
         },
         (payload: any) => {
-          console.log("[v0] Realtime: New message received:", payload.new)
           const newMsg = payload.new as Message
           setMessages(prev => {
             // Avoid duplicates
@@ -304,7 +304,6 @@ export default function MessagesPage() {
           filter: `conversation_id=eq.${conversationId}`
         },
         (payload: any) => {
-          console.log("[v0] Realtime: Message updated:", payload.new)
           const updatedMsg = payload.new as Message
           setMessages(prev => prev.map(m => m.id === updatedMsg.id ? updatedMsg : m))
         }
@@ -318,13 +317,11 @@ export default function MessagesPage() {
           filter: `conversation_id=eq.${conversationId}`
         },
         (payload: any) => {
-          console.log("[v0] Realtime: Message deleted:", payload.old)
           const deletedMsg = payload.old as Message
           setMessages(prev => prev.filter(m => m.id !== deletedMsg.id))
         }
       )
       .subscribe((status: any) => {
-        console.log("[v0] Messages Realtime subscription status:", status)
       })
   }, [])
   
@@ -338,11 +335,9 @@ export default function MessagesPage() {
       conversationsChannelRef.current.unsubscribe()
     }
     
-    console.log("[v0] Setting up Realtime subscription for conversations")
     const { data: providerProfiles } = await supabase.from("providers").select("id").eq("user_id", user.id)
     const providerIds = providerProfiles?.map((provider: any) => provider.id).filter(Boolean) || []
     const handleConversationChange = (payload: any) => {
-      console.log("[v0] Realtime: Conversation change detected:", payload.eventType, payload)
       fetchConversations(user.id)
     }
     
@@ -374,7 +369,6 @@ export default function MessagesPage() {
 
     conversationsChannelRef.current = channel
       .subscribe((status: any) => {
-        console.log("[v0] Conversations Realtime subscription status:", status)
       })
   }, [user])
   
@@ -386,7 +380,6 @@ export default function MessagesPage() {
       ordersChannelRef.current.unsubscribe()
     }
     
-    console.log("[v0] Setting up Realtime subscription for orders in conversation:", conversationId)
     
     ordersChannelRef.current = supabase
       .channel(`orders:${conversationId}`)
@@ -399,24 +392,20 @@ export default function MessagesPage() {
           filter: `conversation_id=eq.${conversationId}`
         },
         (payload: any) => {
-          console.log("[v0] Realtime: Order change detected:", payload.eventType, payload)
           fetchOrders(conversationId)
         }
       )
       .subscribe((status: any) => {
-        console.log("[v0] Orders Realtime subscription status:", status)
       })
   }, [])
 
   const checkAuthAndFetchData = async () => {
     const supabase = createClient()
 
-    console.log("[v0] ========== AUTH CHECK START ==========")
 
     const { data, error } = await supabase.auth.getUser()
 
     if (error || !data.user) {
-      console.warn("[v0] No authenticated user, redirecting to login", error?.message)
       router.push("/auth/login")
       return
     }
@@ -426,11 +415,9 @@ export default function MessagesPage() {
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", data.user.id).single()
 
     setUserProfile(profile)
-    console.log("[v0] User profile:", profile)
 
     await fetchConversations(data.user.id)
     setIsLoading(false)
-    console.log("[v0] ========== AUTH CHECK END ==========")
   }
 
   const fetchOrders = async (conversationId: string) => {
@@ -444,13 +431,11 @@ export default function MessagesPage() {
         .order("created_at", { ascending: true })
 
       if (error) {
-        console.error("[v0] Error fetching orders:", error)
         return
       }
 
       setOrders(data || [])
     } catch (error) {
-      console.error("[v0] Error fetching orders:", error)
     }
   }
 
@@ -502,95 +487,80 @@ export default function MessagesPage() {
     }, 100)
   }
 
+  const [showCompleteOrderDialog, setShowCompleteOrderDialog] = useState<string | null>(null)
+  const [showConfirmOrderDialog, setShowConfirmOrderDialog] = useState<string | null>(null)
+
   const handlePayment = async (orderId: string) => {
     setProcessingPayment(true)
     try {
       const result = await createPaymentCharge(orderId)
 
       if (!result.success) {
-        alert(result.error)
+        toast({ title: t("خطأ", "Error"), description: result.error, variant: "destructive" })
         return
       }
 
       if (result.data.url) {
-        // Try to open in a new tab first (more reliable)
         const newWindow = window.open(result.data.url, "_blank")
-
-        // If popup blocker prevented opening, fallback to current window
         if (!newWindow || newWindow.closed || typeof newWindow.closed === "undefined") {
-          console.log("[v0] Popup blocked, redirecting in current window")
-          // Show a message and redirect after a short delay
-          if (
-            confirm(
-              language === "ar"
-                ? "سيتم توجيهك إلى صفحة الدفع. انقر موافق للمتابعة."
-                : "You will be redirected to the payment page. Click OK to continue.",
-            )
-          ) {
-            window.location.href = result.data.url
-          }
-        } else {
-          console.log("[v0] Successfully opened Tap Payment checkout in new tab")
+          window.location.href = result.data.url
         }
       }
-    } catch (error) {
-      console.error("[v0] Payment error:", error)
-      alert(language === "ar" ? "فشل في معالجة الدفع" : "Failed to process payment")
+    } catch {
+      toast({ title: t("خطأ", "Error"), description: language === "ar" ? "فشل في معالجة الدفع" : "Failed to process payment", variant: "destructive" })
     } finally {
       setProcessingPayment(false)
     }
   }
 
   const handleCompleteOrder = async (orderId: string) => {
-    if (
-      !confirm(language === "ar" ? "هل أنت متأكد من إكمال هذا الطلب؟" : "Are you sure you want to complete this order?")
-    ) {
-      return
-    }
+    setShowCompleteOrderDialog(orderId)
+  }
+
+  const executeCompleteOrder = async () => {
+    const orderId = showCompleteOrderDialog
+    setShowCompleteOrderDialog(null)
+    if (!orderId) return
 
     try {
       const result = await completeOrder(orderId)
 
       if (!result.success) {
-        alert(result.error)
+        toast({ title: t("خطأ", "Error"), description: result.error, variant: "destructive" })
       } else {
-        alert(language === "ar" ? "تم إكمال الطلب بنجاح!" : "Order completed successfully!")
+        toast({ title: t("تم بنجاح", "Success"), description: language === "ar" ? "تم إكمال الطلب بنجاح!" : "Order completed successfully!" })
         if (selectedConversation) {
           await fetchOrders(selectedConversation)
         }
       }
-    } catch (error) {
-      console.error("[v0] Complete order error:", error)
-      alert("Failed to complete order")
+    } catch {
+      toast({ title: t("خطأ", "Error"), description: "Failed to complete order", variant: "destructive" })
     }
   }
 
   const handleConfirmOrder = async (orderId: string) => {
-    if (
-      !confirm(
-        language === "ar"
-          ? "هل تؤكد استلام الخدمة وإتمام الطلب؟"
-          : "Do you confirm receiving the service and completing the order?",
-      )
-    ) {
-      return
-    }
+    setShowConfirmOrderDialog(orderId)
+  }
+
+  const executeConfirmOrder = async () => {
+    const orderId = showConfirmOrderDialog
+    setShowConfirmOrderDialog(null)
+    if (!orderId) return
 
     setProcessingConfirmation(true)
     try {
       const result = await confirmOrder(orderId)
 
       if (!result.success) {
-        alert(result.error)
+        toast({ title: t("خطأ", "Error"), description: result.error, variant: "destructive" })
       } else {
-        alert(language === "ar" ? "تم تأكيد الطلب بنجاح!" : "Order confirmed successfully!")
+        toast({ title: t("تم بنجاح", "Success"), description: language === "ar" ? "تم تأكيد الطلب بنجاح!" : "Order confirmed successfully!" })
         if (selectedConversation) {
           await fetchOrders(selectedConversation)
         }
       }
-    } catch (error) {
-      console.error("[v0] Confirm order error:", error)
-      alert("Failed to confirm order")
+    } catch {
+      toast({ title: t("خطأ", "Error"), description: "Failed to confirm order", variant: "destructive" })
     } finally {
       setProcessingConfirmation(false)
     }
@@ -600,20 +570,15 @@ export default function MessagesPage() {
     const supabase = createClient()
 
     try {
-      console.log("[v0] ========== FETCHING CONVERSATIONS ==========")
-      console.log("[v0] Fetching conversations for user ID:", userId)
 
       const { data: seekerConvs, error: seekerError } = await supabase
         .from("conversations")
         .select("*")
         .eq("seeker_id", userId)
 
-      console.log("[v0] ALL seeker conversations (before archive filter):", seekerConvs?.length || 0)
       if (seekerError) {
-        console.error("[v0] Seeker query error:", seekerError)
       }
       if (seekerConvs && seekerConvs.length > 0) {
-        console.log(
           "[v0] Seeker conversations details:",
           seekerConvs.map((c: any) => ({
             id: c.id,
@@ -625,14 +590,11 @@ export default function MessagesPage() {
 
       // Filter non-archived conversations
       const nonArchivedSeekerConvs = seekerConvs?.filter((c: any) => !c.is_archived_by_seeker) || []
-      console.log("[v0] Non-archived seeker conversations:", nonArchivedSeekerConvs.length)
 
       // Get ALL provider profiles for this user (user may have multiple)
       const { data: providerProfiles } = await supabase.from("providers").select("id").eq("user_id", userId)
 
-      console.log("[v0] Provider profiles found:", providerProfiles?.length || 0)
       if (providerProfiles && providerProfiles.length > 0) {
-        console.log("[v0] Provider profile IDs:", providerProfiles.map((p: any) => p.id))
       }
 
       let nonArchivedProviderConvs: any[] = []
@@ -644,9 +606,7 @@ export default function MessagesPage() {
           .select("*")
           .in("provider_id", providerIds)
 
-        console.log("[v0] ALL provider conversations (before archive filter):", pConvs?.length || 0)
         if (pConvs && pConvs.length > 0) {
-          console.log(
             "[v0] Provider conversations details:",
             pConvs.map((c: any) => ({
               id: c.id,
@@ -658,15 +618,11 @@ export default function MessagesPage() {
         }
 
         nonArchivedProviderConvs = pConvs?.filter((c: any) => !c.is_archived_by_provider) || []
-        console.log("[v0] Non-archived provider conversations:", nonArchivedProviderConvs.length)
       }
 
       const allConvs = [...nonArchivedSeekerConvs, ...nonArchivedProviderConvs]
-      console.log("[v0] TOTAL conversations found:", allConvs.length)
 
       if (allConvs.length === 0) {
-        console.log("[v0] No conversations found for this user")
-        console.log("[v0] ========== END FETCHING CONVERSATIONS ==========")
         setConversations([])
         return
       }
@@ -684,8 +640,6 @@ export default function MessagesPage() {
         .select("id, full_name, avatar_url")
         .in("id", seekerIds)
 
-      console.log("[v0] Providers data:", providersData)
-      console.log("[v0] Seekers data:", seekersData)
 
       const formattedConversations = allConvs.map((conv: any) => {
         const isUserSeeker = conv.seeker_id === userId
@@ -721,8 +675,6 @@ export default function MessagesPage() {
         }
       })
 
-      console.log("[v0] Final formatted conversations:", formattedConversations.length)
-      console.log("[v0] ========== END FETCHING CONVERSATIONS ==========")
 
       const sortedConversations = formattedConversations.sort((a, b) => {
         if (a.is_pinned && !b.is_pinned) return -1
@@ -740,7 +692,6 @@ export default function MessagesPage() {
 
       setConversations(uniqueConversations || [])
     } catch (error) {
-      console.error("[v0] Error fetching conversations:", error)
     }
   }
 
@@ -748,7 +699,6 @@ export default function MessagesPage() {
     const supabase = createClient()
 
     try {
-      console.log("[v0] Creating/opening conversation with provider:", providerId)
 
       // Validate that the providerId is a real provider
       const { data: providerExists, error: providerError } = await supabase
@@ -758,7 +708,6 @@ export default function MessagesPage() {
         .single()
 
       if (providerError || !providerExists) {
-        console.error("[v0] Invalid provider ID - provider does not exist:", providerId)
         router.replace("/messages", { scroll: false })
         return
       }
@@ -770,17 +719,13 @@ export default function MessagesPage() {
         .eq("provider_id", providerId)
         .single()
 
-      console.log("[v0] Existing conversation query result:", existing, "Error:", queryError)
 
       if (existing) {
-        console.log("[v0] Found existing conversation:", existing.id)
-        console.log("[v0] Conversation archived status:", {
           is_archived_by_seeker: existing.is_archived_by_seeker,
           is_archived_by_provider: existing.is_archived_by_provider,
         })
 
         if (existing.is_archived_by_seeker) {
-          console.log("[v0] Unarchiving conversation for seeker")
           const { error: updateError } = await supabase
             .from("conversations")
             .update({
@@ -790,9 +735,7 @@ export default function MessagesPage() {
             .eq("id", existing.id)
 
           if (updateError) {
-            console.error("[v0] Error unarchiving conversation:", updateError)
           } else {
-            console.log("[v0] Successfully unarchived conversation")
           }
         }
 
@@ -800,7 +743,6 @@ export default function MessagesPage() {
         await fetchConversations(user.id)
         setSelectedConversation(existing.id)
       } else {
-        console.log("[v0] Creating new conversation")
         const { data: newConv, error: createError } = await supabase
           .from("conversations")
           .insert({
@@ -810,7 +752,6 @@ export default function MessagesPage() {
           .select()
           .single()
 
-        console.log("[v0] New conversation created:", newConv, "Error:", createError)
 
         if (newConv) {
           // First refresh conversations list, then set selected
@@ -822,7 +763,6 @@ export default function MessagesPage() {
       // Clear the URL parameter after processing
       router.replace("/messages", { scroll: false })
     } catch (error) {
-      console.error("[v0] Error creating/opening conversation:", error)
     }
   }
 
@@ -830,9 +770,6 @@ export default function MessagesPage() {
     const supabase = createClient()
 
     try {
-      console.log("[v0] ========== FETCHING MESSAGES ==========")
-      console.log("[v0] Conversation ID:", conversationId)
-      console.log("[v0] Current user ID:", user?.id)
 
       let query = supabase
         .from("messages")
@@ -847,29 +784,21 @@ export default function MessagesPage() {
       const { data: result, error } = await query
 
       if (error) {
-        console.error("[v0] Error fetching messages:", error)
         return
       }
 
-      console.log("[v0] Fetched messages count:", result?.length || 0)
 
       setMessages(result || [])
 
       const unreadMessages = result?.filter((m: any) => !m.is_read && m.sender_id !== user.id)
       if (unreadMessages && unreadMessages.length > 0) {
-        console.log("[v0] Marking", unreadMessages.length, "messages as read")
         const unreadIds = unreadMessages.map((message: any) => message.id)
         await supabase.from("messages").update({ is_read: true }).in("id", unreadIds)
       }
 
       if (result && result.length > 0) {
-        console.log("[v0] Message sender IDs:", [...new Set(result.map((m: any) => m.sender_id))])
-        console.log("[v0] Messages from current user:", result.filter((m: any) => m.sender_id === user?.id).length)
-        console.log("[v0] Messages from other user:", result.filter((m: any) => m.sender_id !== user?.id).length)
       }
-      console.log("[v0] ========== END FETCHING MESSAGES ==========")
     } catch (error) {
-      console.error("[v0] Error fetching messages:", error)
     }
   }
 
@@ -879,7 +808,6 @@ export default function MessagesPage() {
     const supabase = createClient()
 
     try {
-      console.log("[v0] Sending message:", {
         conversation_id: selectedConversation,
         sender_id: user.id,
         content: newMessage,
@@ -896,7 +824,6 @@ export default function MessagesPage() {
         .select()
         .single()
 
-      console.log("[v0] Message sent:", data, "Error:", error)
 
       await supabase
         .from("conversations")
@@ -918,7 +845,6 @@ export default function MessagesPage() {
         }
       }, 100)
     } catch (error) {
-      console.error("[v0] Error sending message:", error)
     }
   }
 
@@ -937,7 +863,6 @@ export default function MessagesPage() {
 
       await fetchConversations(user.id)
     } catch (error) {
-      console.error("[v0] Error toggling pin:", error)
     }
   }
 
@@ -960,7 +885,6 @@ export default function MessagesPage() {
 
       await fetchConversations(user.id)
     } catch (error) {
-      console.error("[v0] Error archiving conversation:", error)
     }
   }
 
@@ -977,7 +901,6 @@ export default function MessagesPage() {
         .eq("id", selectedConversation)
 
       if (error) {
-        console.error("[v0] Error clearing chat:", error)
         return
       }
 
@@ -985,7 +908,6 @@ export default function MessagesPage() {
       setShowClearDialog(false)
       await fetchConversations(user.id)
     } catch (error) {
-      console.error("[v0] Error clearing chat:", error)
     }
   }
 
@@ -1012,7 +934,7 @@ export default function MessagesPage() {
       <main className="flex-1 container mx-auto px-4 py-8">
         <div className="grid md:grid-cols-[320px_1fr] gap-4 h-[calc(100vh-200px)]">
           {/* Conversations List */}
-          <Card className="flex flex-col overflow-hidden">
+          <Card className={`flex flex-col overflow-hidden ${selectedConversation ? "hidden md:flex" : "flex"}`}>
             <div className="p-4 border-b">
               <h2 className="font-bold text-xl mb-3">{t("المحادثات", "Messages")}</h2>
               <div className="relative">
@@ -1047,9 +969,11 @@ export default function MessagesPage() {
                   >
                     <div className="flex items-center gap-3">
                       <Avatar className="h-12 w-12">
-                        <img
+                        <Image
                           src={conv.other_party_avatar || "/placeholder.svg"}
                           alt={conv.other_party_name}
+                          width={48}
+                          height={48}
                           className="h-full w-full object-cover"
                         />
                       </Avatar>
@@ -1070,7 +994,7 @@ export default function MessagesPage() {
           </Card>
 
           {/* Chat Area */}
-          <Card className="flex flex-col overflow-hidden">
+          <Card className={`flex flex-col overflow-hidden ${selectedConversation ? "flex" : "hidden md:flex"}`}>
             {selectedConversation && currentConversation ? (
               <>
                 <div className="p-4 border-b flex items-center gap-3">
@@ -1078,9 +1002,11 @@ export default function MessagesPage() {
                     <ArrowLeft className="h-4 w-4" />
                   </Button>
                   <Avatar className="h-10 w-10">
-                    <img
+                    <Image
                       src={currentConversation.other_party_avatar || "/placeholder.svg"}
                       alt={currentConversation.other_party_name}
+                      width={40}
+                      height={40}
                       className="h-full w-full object-cover"
                     />
                   </Avatar>
@@ -1098,11 +1024,6 @@ export default function MessagesPage() {
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        console.log("[v0] ========== CREATE ORDER BUTTON CLICKED ==========")
-                        console.log("[v0] Current conversation:", currentConversation)
-                        console.log("[v0] Provider ID:", currentConversation.provider_id)
-                        console.log("[v0] Seeker ID:", currentConversation.seeker_id)
-                        console.log("[v0] Opening create order dialog...")
                         setShowCreateOrder(true)
                       }}
                       className="gap-2"
@@ -1120,18 +1041,18 @@ export default function MessagesPage() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align={language === "ar" ? "start" : "end"}>
                       <DropdownMenuItem onClick={() => togglePin(selectedConversation, currentConversation.is_pinned)}>
-                        <Pin className="h-4 w-4 mr-2" />
+                        <Pin className="h-4 w-4 me-2" />
                         {currentConversation.is_pinned ? t("إلغاء التثبيت", "Unpin") : t("تثبيت", "Pin")}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setShowClearDialog(true)}>
-                        <X className="h-4 w-4 mr-2" />
+                        <X className="h-4 w-4 me-2" />
                         {t("مسح المحادثة", "Clear Chat")}
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => setShowArchiveDialog(true)}
                         className="text-destructive"
                       >
-                        <Trash2 className="h-4 w-4 mr-2" />
+                        <Trash2 className="h-4 w-4 me-2" />
                         {t("إخفاء المحادثة", "Hide Conversation")}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -1184,7 +1105,7 @@ export default function MessagesPage() {
                                 <Card className="overflow-hidden border-2 border-primary/20 shadow-sm">
                                   {serviceCard.image_url && (
                                     <div className="aspect-video overflow-hidden">
-                                      <img src={serviceCard.image_url} alt={name} className="w-full h-full object-cover" />
+                                      <Image src={serviceCard.image_url} alt={name} width={340} height={200} className="w-full h-full object-cover" />
                                     </div>
                                   )}
                                   <div className="p-3 space-y-2">
@@ -1272,7 +1193,7 @@ export default function MessagesPage() {
                                     )}
                                   </div>
                                   {order.status === "completed" && (
-                                    <CheckCircle className="h-5 w-5 text-green-500 shrink-0 ml-2" />
+                                    <CheckCircle className="h-5 w-5 text-green-500 shrink-0 ms-2" />
                                   )}
                                 </div>
 
@@ -1309,16 +1230,16 @@ export default function MessagesPage() {
                                   <span
                                     className={`text-xs px-2 py-1 rounded-full ${
                                       order.status === "pending"
-                                        ? "bg-yellow-100 text-yellow-800"
+                                        ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
                                         : order.status === "paid"
-                                          ? "bg-blue-100 text-blue-800"
+                                          ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
                                           : order.status === "completed"
-                                            ? "bg-green-100 text-green-800"
+                                            ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
                                             : order.status === "awaiting_confirmation"
-                                              ? "bg-purple-100 text-purple-800"
+                                              ? "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300"
                                               : order.status === "cancelled"
-                                                ? "bg-red-100 text-red-800"
-                                                : "bg-gray-100 text-gray-800"
+                                                ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+                                                : "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300"
                                     }`}
                                   >
                                     {order.status === "pending" && t("قيد الانتظار", "Pending")}
@@ -1448,7 +1369,7 @@ export default function MessagesPage() {
                     <Input
                       value={newMessage}
                       onChange={(e) => setNewMessage(e.target.value)}
-                      onKeyPress={(e) => e.key === "Enter" && sendMessage()}
+                      onKeyDown={(e) => e.key === "Enter" && sendMessage()}
                       placeholder={t("اكتب رسالة...", "Type a message...")}
                       className="flex-1"
                     />
@@ -1483,12 +1404,10 @@ export default function MessagesPage() {
             providerId={currentConversation.provider_id}
             prefill={orderPrefill ?? undefined}
             onClose={() => {
-              console.log("[v0] Closing create order dialog")
               setShowCreateOrder(false)
               setOrderPrefill(null)
             }}
             onSuccess={() => {
-              console.log("[v0] Order created successfully!")
               if (selectedConversation) {
                 fetchOrders(selectedConversation)
               }
@@ -1525,7 +1444,7 @@ export default function MessagesPage() {
                   <div key={service.id} className="flex gap-3 p-3 rounded-xl border bg-card hover:bg-muted/40 transition-colors">
                     {cover ? (
                       <div className="h-16 w-20 rounded-lg overflow-hidden shrink-0">
-                        <img src={cover} alt={name} className="w-full h-full object-cover" />
+                        <Image src={cover} alt={name} width={80} height={64} className="w-full h-full object-cover" />
                       </div>
                     ) : (
                       <div className="h-16 w-20 rounded-lg bg-muted flex items-center justify-center shrink-0">
@@ -1597,6 +1516,36 @@ export default function MessagesPage() {
             >
               {t("إخفاء", "Hide")}
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!showCompleteOrderDialog} onOpenChange={(open) => !open && setShowCompleteOrderDialog(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("تأكيد إكمال الطلب", "Confirm Order Completion")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("هل أنت متأكد من إكمال هذا الطلب؟", "Are you sure you want to complete this order?")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("إلغاء", "Cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={executeCompleteOrder}>{t("إكمال", "Complete")}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!showConfirmOrderDialog} onOpenChange={(open) => !open && setShowConfirmOrderDialog(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("تأكيد استلام الخدمة", "Confirm Service Delivery")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("هل تؤكد استلام الخدمة وإتمام الطلب؟", "Do you confirm receiving the service and completing the order?")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("إلغاء", "Cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={executeConfirmOrder}>{t("تأكيد", "Confirm")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

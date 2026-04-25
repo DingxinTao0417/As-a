@@ -46,6 +46,8 @@ import {
   ReceiptText,
 } from "lucide-react"
 
+import { useToast } from "@/hooks/use-toast"
+
 export interface Order {
   id: string
   conversation_id: string
@@ -211,7 +213,7 @@ function OrderDetailDialog({
             className="flex-1"
             onClick={() => { onClose(); onChat(order.conversation_id) }}
           >
-            <MessageCircle className="h-4 w-4 mr-1" />
+            <MessageCircle className="h-4 w-4 me-1" />
             {t("المحادثة", "Chat")}
           </Button>
           {canDeliver && (
@@ -220,7 +222,7 @@ function OrderDetailDialog({
               className="flex-1"
               onClick={() => onComplete(order.id)}
             >
-              <CheckCircle className="h-4 w-4 mr-1" />
+              <CheckCircle className="h-4 w-4 me-1" />
               {t("تسليم العمل", "Deliver Work")}
             </Button>
           )}
@@ -246,6 +248,7 @@ function OrderDetailDialog({
 export function OrdersTable({ orders: rawOrders, onOrderUpdate }: { orders: Order[]; onOrderUpdate?: () => void | Promise<void> }) {
   const { t, language } = useLanguage()
   const router = useRouter()
+  const { toast } = useToast()
 
   // ── filter / sort state ──
   const [search, setSearch] = useState("")
@@ -373,7 +376,7 @@ export function OrdersTable({ orders: rawOrders, onOrderUpdate }: { orders: Orde
       setSelectedOrder(null)
       await onOrderUpdate?.()
     } else {
-      alert(result.error)
+      toast({ title: t("خطأ", "Error"), description: result.error, variant: "destructive" })
     }
     setDelivering(false)
   }, [deliveryOrderId, delivering, onOrderUpdate])
@@ -395,7 +398,7 @@ export function OrdersTable({ orders: rawOrders, onOrderUpdate }: { orders: Orde
           <CardDescription>
             {t("عرض وإدارة جميع الطلبات", "View and manage all orders")}
             {processed.length !== rawOrders.length && (
-              <span className="mr-2 ml-2 text-primary font-medium">
+              <span className="me-2 ms-2 text-primary font-medium">
                 · {processed.length} {t("نتيجة", "results")}
               </span>
             )}
@@ -567,7 +570,7 @@ export function OrdersTable({ orders: rawOrders, onOrderUpdate }: { orders: Orde
                           </Button>
                           {canDeliver && (
                             <Button size="sm" onClick={() => requestDeliveryConfirmation(order.id)}>
-                              <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                              <CheckCircle className="h-3.5 w-3.5 me-1" />
                               {t("تسليم", "Deliver")}
                             </Button>
                           )}

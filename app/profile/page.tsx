@@ -32,6 +32,16 @@ import {
 import { useToast } from "@/hooks/use-toast"
 import { exportUserData } from "@/app/actions/user-data"
 import { requestAccountDeletion } from "@/app/actions/delete-account"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 interface Profile {
   id: string
@@ -76,6 +86,7 @@ export default function ProfilePage() {
   const [changingPassword, setChangingPassword] = useState(false)
   const [exportingData, setExportingData] = useState(false)
   const [deletingAccount, setDeletingAccount] = useState(false)
+  const [showDeleteAccountDialog, setShowDeleteAccountDialog] = useState(false)
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -186,9 +197,7 @@ export default function ProfilePage() {
         .select("id")
 
       if (providerError) {
-        console.error("Provider avatar update error:", providerError)
-      } else {
-        console.log("Provider avatar updated:", providerData)
+        // provider avatar update failed silently
       }
 
       setProfile((prev) => ({ ...prev, avatar_url: urlWithBust }))
@@ -198,7 +207,6 @@ export default function ProfilePage() {
         description: t("تم رفع صورتك الشخصية بنجاح", "Your profile photo has been uploaded"),
       })
     } catch (error: any) {
-      console.error("Avatar upload error:", error)
       setAvatarPreview(null)
       toast({
         title: t("فشل رفع الصورة", "Upload failed"),
@@ -247,7 +255,6 @@ export default function ProfilePage() {
         description: t("تم تحديث معلومات ملفك الشخصي", "Your profile has been updated"),
       })
     } catch (error: any) {
-      console.error("Profile save error:", error)
       toast({
         title: t("حدث خطأ", "Error"),
         description: error?.message || t("فشل حفظ التغييرات", "Failed to save changes"),
@@ -342,14 +349,11 @@ export default function ProfilePage() {
   }
 
   const handleRequestDeletion = async () => {
-    const confirmed = window.confirm(
-      t(
-        "هل أنت متأكد من طلب حذف حسابك؟ سيتم تسجيل خروجك وقد لا يمكن التراجع بعد معالجة الطلب.",
-        "Are you sure you want to request account deletion? You will be signed out and the request may not be reversible once processed."
-      )
-    )
-    if (!confirmed) return
+    setShowDeleteAccountDialog(true)
+  }
 
+  const executeDeleteAccount = async () => {
+    setShowDeleteAccountDialog(false)
     setDeletingAccount(true)
     try {
       const result = await requestAccountDeletion()
@@ -472,11 +476,11 @@ export default function ProfilePage() {
                     <Tabs defaultValue="info" className="mt-2">
                       <TabsList className="grid w-full grid-cols-2">
                         <TabsTrigger value="info">
-                          <User className="h-4 w-4 ml-1" />
+                          <User className="h-4 w-4 ms-1" />
                           {t("المعلومات", "Info")}
                         </TabsTrigger>
                         <TabsTrigger value="password">
-                          <ShieldCheck className="h-4 w-4 ml-1" />
+                          <ShieldCheck className="h-4 w-4 ms-1" />
                           {t("كلمة المرور", "Password")}
                         </TabsTrigger>
                       </TabsList>
@@ -788,6 +792,26 @@ export default function ProfilePage() {
           </div>
         </div>
       </main>
+
+      <AlertDialog open={showDeleteAccountDialog} onOpenChange={setShowDeleteAccountDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("حذف الحساب", "Delete Account")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                "هل أنت متأكد من طلب حذف حسابك؟ سيتم تسجيل خروجك وقد لا يمكن التراجع بعد معالجة الطلب.",
+                "Are you sure you want to request account deletion? You will be signed out and the request may not be reversible once processed."
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("إلغاء", "Cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={executeDeleteAccount} className="bg-destructive text-destructive-foreground">
+              {t("حذف حسابي", "Delete My Account")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Footer />
     </div>

@@ -31,6 +31,7 @@ import {
   User,
   DollarSign,
 } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 
 // --- Types ---
 type ServiceWithProvider = {
@@ -223,37 +224,35 @@ export default function ServiceDetailPage() {
     router.push(`/messages?provider=${service?.provider_id}`)
   }
 
+  const { toast: showToast } = useToast()
+
   const handleOrderNow = async () => {
     if (!user) { router.push("/auth/login"); return }
     if (!service) return
 
     setIsOrdering(true)
     try {
-      // 1. Create a direct order and related conversation context
       const orderResult = await createDirectOrder(service.id)
-      
+
       if (!orderResult.success) {
-        alert(orderResult.error)
+        showToast({ title: t("خطأ", "Error"), description: orderResult.error, variant: "destructive" })
         setIsOrdering(false)
         return
       }
 
       const { orderId } = orderResult.data
 
-      // 2. Create Tap payment charge
       const paymentResult = await createPaymentCharge(orderId)
 
       if (!paymentResult.success || !paymentResult.data.url) {
-        alert(paymentResult.success ? "Failed to initialize payment" : paymentResult.error)
+        showToast({ title: t("خطأ", "Error"), description: paymentResult.success ? "Failed to initialize payment" : paymentResult.error, variant: "destructive" })
         setIsOrdering(false)
         return
       }
 
-      // 3. Redirect to Tap payment
       window.location.href = paymentResult.data.url
-    } catch (error) {
-      console.error("Error creating direct order:", error)
-      alert("An unexpected error occurred")
+    } catch {
+      showToast({ title: t("خطأ", "Error"), description: t("حدث خطأ غير متوقع", "An unexpected error occurred"), variant: "destructive" })
       setIsOrdering(false)
     }
   }
@@ -688,7 +687,7 @@ export default function ServiceDetailPage() {
                                 <div>
                                   <span className="font-semibold text-sm">{reviewerName}</span>
                                   {review.service_name && (
-                                    <span className="text-xs text-muted-foreground ml-2">• {review.service_name}</span>
+                                    <span className="text-xs text-muted-foreground ms-2">• {review.service_name}</span>
                                   )}
                                 </div>
                                 <span className="text-xs text-muted-foreground">{formatDate(review.created_at)}</span>

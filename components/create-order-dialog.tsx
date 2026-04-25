@@ -71,12 +71,6 @@ export function CreateOrderDialog({
     e.preventDefault()
     setError("")
 
-    console.log("[v0] ========== ORDER CREATION STARTED ==========")
-    console.log("[v0] Form submit triggered")
-    console.log("[v0] Form data:", formData)
-    console.log("[v0] Amount validation:", { amount, isValidAmount, canSubmit })
-    console.log("[v0] IDs:", { conversationId, seekerId, providerId })
-
     if (!isValidAmount) {
       setError(t("المبلغ يجب أن يكون 1 ريال على الأقل", "Amount must be at least 1.00 SAR"))
       return
@@ -90,13 +84,6 @@ export function CreateOrderDialog({
     setLoading(true)
 
     try {
-      console.log("[v0] Submitting order with data:", {
-        conversationId,
-        seekerId,
-        providerId,
-        amount,
-      })
-
       const result = await createOrder({
         conversationId,
         serviceNameAr: formData.serviceNameAr,
@@ -114,7 +101,6 @@ export function CreateOrderDialog({
         onClose()
       }
     } catch (err) {
-      console.error("[v0] Unexpected error:", err)
       setError(`Failed to create quote: ${err instanceof Error ? err.message : "Unknown error"}`)
     } finally {
       setLoading(false)
@@ -122,12 +108,10 @@ export function CreateOrderDialog({
   }
 
   const handleCloseClick = () => {
-    console.log("[v0] Close button clicked")
     onClose()
   }
 
   const handleCancelClick = () => {
-    console.log("[v0] Cancel button clicked")
     onClose()
   }
 
@@ -259,7 +243,6 @@ export function CreateOrderDialog({
                 type="submit"
                 disabled={!canSubmit}
                 className="flex-1"
-                onClick={() => console.log("[v0] Submit button clicked, canSubmit:", canSubmit)}
               >
                 {loading
                   ? language === "ar"
