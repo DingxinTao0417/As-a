@@ -26,6 +26,7 @@ import { createClient } from "@/lib/supabase/client"
 export default function HomePage() {
   const { t } = useLanguage()
   const [userRole, setUserRole] = useState<string | null>(null) // null = not logged in
+  const [roleChecked, setRoleChecked] = useState(false)
 
   useEffect(() => {
     async function checkUser() {
@@ -35,6 +36,7 @@ export default function HomePage() {
         const role = user.user_metadata?.role || "seeker"
         setUserRole(role)
       }
+      setRoleChecked(true)
     }
     checkUser()
   }, [])
@@ -140,12 +142,12 @@ export default function HomePage() {
                   "We connect you with the opportunities you deserve, making every achievement simple and clear",
                 )}
               </p>
-              <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+              <div className={`flex flex-col sm:flex-row gap-4 justify-center items-center transition-opacity duration-300 ${roleChecked ? "opacity-100" : "opacity-0"}`}>
                 {userRole !== "provider" && (
                   <Button size="lg" className="bg-primary hover:bg-primary/90 text-lg px-8" asChild>
                     <Link href="/services/seeker">
                       {t("ابحث عن محترف", "Find a Professional")}
-                      <ArrowRight className="mr-2 h-5 w-5" />
+                      <ArrowRight className="me-2 h-5 w-5" />
                     </Link>
                   </Button>
                 )}
@@ -209,17 +211,19 @@ export default function HomePage() {
               {services.map((service, index) => {
                 const Icon = service.icon
                 return (
-                  <Card key={index} className="p-6 hover:shadow-lg transition-all hover:scale-105 cursor-pointer">
-                    <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                        <Icon className="h-6 w-6 text-primary" />
+                  <Link key={index} href="/services/seeker">
+                    <Card className="p-6 hover:shadow-lg transition-all hover:scale-105 cursor-pointer">
+                      <div className="flex items-start gap-4">
+                        <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <Icon className="h-6 w-6 text-primary" />
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-lg mb-2">{t(service.titleAr, service.titleEn)}</h3>
+                          <p className="text-sm text-primary font-medium">{t(service.priceAr, service.priceEn)}</p>
+                        </div>
                       </div>
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-lg mb-2">{t(service.titleAr, service.titleEn)}</h3>
-                        <p className="text-sm text-primary font-medium">{t(service.priceAr, service.priceEn)}</p>
-                      </div>
-                    </div>
-                  </Card>
+                    </Card>
+                  </Link>
                 )
               })}
             </div>
@@ -227,7 +231,7 @@ export default function HomePage() {
               <Button variant="outline" size="lg" asChild>
                 <Link href="/services/seeker">
                   {t("تصفّح جميع الخدمات", "Browse All Services")}
-                  <ArrowRight className="mr-2 h-5 w-5" />
+                  <ArrowRight className="me-2 h-5 w-5" />
                 </Link>
               </Button>
             </div>
@@ -284,7 +288,7 @@ export default function HomePage() {
         </section>
 
         {/* CTA Section — only for non-seekers */}
-        {userRole !== "seeker" && (
+        {roleChecked && userRole !== "seeker" && (
         <section className="py-16 md:py-24 bg-secondary text-secondary-foreground">
           <div className="container mx-auto px-4">
             <div className="max-w-3xl mx-auto text-center space-y-6">
@@ -306,7 +310,7 @@ export default function HomePage() {
                   {userRole === "provider"
                     ? t("لوحة التحكم", "Dashboard")
                     : t("سجّل كمحترف", "Register as a Professional")}
-                  <ArrowRight className="mr-2 h-5 w-5" />
+                  <ArrowRight className="me-2 h-5 w-5" />
                 </Link>
               </Button>
             </div>

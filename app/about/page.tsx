@@ -42,41 +42,9 @@ export default function AboutPage() {
     },
   ]
 
-  const team = [
-    {
-      nameAr: "عبدالرحمن الغامدي",
-      nameEn: "Abdulrahman Al-Ghamdi",
-      roleAr: "المؤسس والرئيس التنفيذي",
-      roleEn: "Founder & CEO",
-      bioAr: "١٢ سنة في تطوير المنتجات الرقمية. أسس ثلاث شركات ناشئة قبل أسعى.",
-      bioEn: "12 years in digital product development. Founded three startups before As'aa.",
-      initials: "ع",
-    },
-    {
-      nameAr: "لمى السبيعي",
-      nameEn: "Lama Al-Subaie",
-      roleAr: "مديرة المنتج",
-      roleEn: "Head of Product",
-      bioAr: "خبرة في تصميم منصات العمل الحر. شغوفة بتجربة المستخدم العربي.",
-      bioEn: "Experience designing freelance platforms. Passionate about the Arabic user experience.",
-      initials: "ل",
-    },
-    {
-      nameAr: "محمد الدوسري",
-      nameEn: "Mohammed Al-Dosari",
-      roleAr: "مدير التقنية",
-      roleEn: "CTO",
-      bioAr: "مهندس برمجيات بخلفية في أنظمة الدفع الإلكتروني والأمان.",
-      bioEn: "Software engineer with a background in payment systems and security.",
-      initials: "م",
-    },
-  ]
-
   const milestones = [
-    { year: "2022", eventAr: "الفكرة والتأسيس", eventEn: "Idea & founding" },
-    { year: "2023", eventAr: "الإطلاق التجريبي مع ٢٠٠ محترف", eventEn: "Beta launch with 200 professionals" },
-    { year: "2024", eventAr: "تجاوزنا ١٠٠٠ مشروع مكتمل", eventEn: "Crossed 1,000 completed projects" },
-    { year: "2025", eventAr: "توسّع لأكثر من ٥٠٠٠ محترف مسجّل", eventEn: "Expanded to 5,000+ registered professionals" },
+    { year: "2025", eventAr: "بداية الفكرة وتطوير المنصة", eventEn: "Idea born & platform development begins" },
+    { year: "2026", eventAr: "الإطلاق الرسمي وبدء العمليات التجارية", eventEn: "Official launch & business operations begin" },
   ]
 
   return (
@@ -87,7 +55,7 @@ export default function AboutPage() {
 
         {/* ─── Page header ─── */}
         <section className="border-b border-border py-16 md:py-24">
-          <div className="container mx-auto px-6">
+          <div className="container mx-auto px-4">
             <div className="max-w-2xl">
               <p className="text-xs font-semibold tracking-widest uppercase text-muted-foreground mb-3">
                 {t("من نحن", "About us")}
@@ -110,7 +78,7 @@ export default function AboutPage() {
 
         {/* ─── Mission ─── */}
         <section className="py-16 md:py-24 bg-muted/30">
-          <div className="container mx-auto px-6">
+          <div className="container mx-auto px-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center max-w-5xl mx-auto">
               <div>
                 <p className="text-xs font-semibold tracking-widest uppercase text-muted-foreground mb-3">
@@ -156,7 +124,7 @@ export default function AboutPage() {
 
         {/* ─── Values ─── */}
         <section className="py-16 md:py-24">
-          <div className="container mx-auto px-6">
+          <div className="container mx-auto px-4">
             <div className="max-w-5xl mx-auto">
               <div className="mb-12">
                 <p className="text-xs font-semibold tracking-widest uppercase text-muted-foreground mb-3">
@@ -188,7 +156,7 @@ export default function AboutPage() {
 
         {/* ─── Timeline ─── */}
         <section className="py-16 md:py-24 bg-muted/30 border-y border-border">
-          <div className="container mx-auto px-6">
+          <div className="container mx-auto px-4">
             <div className="max-w-3xl mx-auto">
               <div className="mb-12">
                 <p className="text-xs font-semibold tracking-widest uppercase text-muted-foreground mb-3">
@@ -219,37 +187,9 @@ export default function AboutPage() {
           </div>
         </section>
 
-        {/* ─── Team ─── */}
-        <section className="py-16 md:py-24">
-          <div className="container mx-auto px-6">
-            <div className="max-w-5xl mx-auto">
-              <div className="mb-12">
-                <p className="text-xs font-semibold tracking-widest uppercase text-muted-foreground mb-3">
-                  {t("الفريق", "The team")}
-                </p>
-                <h2 className="text-3xl font-bold text-foreground">
-                  {t("الأشخاص خلف أسعى", "The people behind As'aa")}
-                </h2>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                {team.map((member, i) => (
-                  <div key={i} className="rounded-2xl border border-border p-6">
-                    <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary mb-5">
-                      {member.initials}
-                    </div>
-                    <div className="font-semibold text-foreground text-lg">{t(member.nameAr, member.nameEn)}</div>
-                    <div className="text-sm text-muted-foreground mb-3">{t(member.roleAr, member.roleEn)}</div>
-                    <p className="text-sm text-muted-foreground leading-relaxed">{t(member.bioAr, member.bioEn)}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-
         {/* ─── CTA ─── */}
         <section className="py-16 md:py-24 bg-secondary text-secondary-foreground">
-          <div className="container mx-auto px-6">
+          <div className="container mx-auto px-4">
             <div className="max-w-2xl mx-auto text-center">
               <h2 className="text-3xl md:text-4xl font-bold mb-4">
                 {t("انضم إلى المجتمع", "Join the community")}

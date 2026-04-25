@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useLanguage } from "@/components/language-provider"
-import { Search, Star, Filter, SlidersHorizontal, MessageCircle, Clock, DollarSign } from "lucide-react"
-import { useState, useEffect } from "react"
+import { Search, Star, Filter, SlidersHorizontal, MessageCircle, Clock, DollarSign, ChevronLeft, ChevronRight } from "lucide-react"
+import { useState, useEffect, useMemo } from "react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -48,6 +48,8 @@ export default function TaskSeekerPage() {
   const [services, setServices] = useState<ServiceWithProvider[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const PAGE_SIZE = 12
   const router = useRouter()
 
   const categories = [
@@ -85,13 +87,11 @@ export default function TaskSeekerPage() {
           .order("created_at", { ascending: false })
 
         if (error) {
-          console.error("[v0] Error fetching services:", error)
           return
         }
 
         setServices((data as ServiceWithProvider[]) || [])
       } catch (error) {
-        console.error("[v0] Error in fetchServices:", error)
       } finally {
         setIsLoading(false)
       }
@@ -109,26 +109,30 @@ export default function TaskSeekerPage() {
     checkUser()
   }, [])
 
-  const filteredServices = services
-    .filter((service) => {
-      const matchesCategory = selectedCategory === "all" || service.category === selectedCategory
+  const filteredServices = useMemo(() => {
+    const result = services
+      .filter((service) => {
+        const matchesCategory = selectedCategory === "all" || service.category === selectedCategory
+        const name = language === "ar" ? service.name_ar : service.name_en
+        const desc = language === "ar" ? service.description_ar : service.description_en
+        const matchesSearch =
+          searchQuery === "" ||
+          name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (desc && desc.toLowerCase().includes(searchQuery.toLowerCase()))
+        return matchesCategory && matchesSearch
+      })
+      .sort((a, b) => {
+        if (sortBy === "price-low") return a.price - b.price
+        if (sortBy === "price-high") return b.price - a.price
+        if (sortBy === "rating") return (b.providers?.rating || 0) - (a.providers?.rating || 0)
+        return 0
+      })
+    setCurrentPage(1)
+    return result
+  }, [services, selectedCategory, searchQuery, sortBy, language])
 
-      const name = language === "ar" ? service.name_ar : service.name_en
-      const desc = language === "ar" ? service.description_ar : service.description_en
-
-      const matchesSearch =
-        searchQuery === "" ||
-        name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (desc && desc.toLowerCase().includes(searchQuery.toLowerCase()))
-
-      return matchesCategory && matchesSearch
-    })
-    .sort((a, b) => {
-      if (sortBy === "price-low") return a.price - b.price
-      if (sortBy === "price-high") return b.price - a.price
-      if (sortBy === "rating") return (b.providers?.rating || 0) - (a.providers?.rating || 0)
-      return 0 // newest is default order from DB
-    })
+  const totalPages = Math.max(1, Math.ceil(filteredServices.length / PAGE_SIZE))
+  const paginatedServices = filteredServices.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
 
   const handleContactProvider = async (providerId: string) => {
     if (!user) {
@@ -239,8 +243,8 @@ export default function TaskSeekerPage() {
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {filteredServices.map((service) => {
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  {paginatedServices.map((service) => {
                     const name = language === "ar" ? service.name_ar : service.name_en
                     const desc = language === "ar" ? service.description_ar : service.description_en
                     const providerName = language === "ar" ? service.providers?.name_ar : service.providers?.name_en
@@ -354,6 +358,56 @@ export default function TaskSeekerPage() {
                     )
                   })}
                 </div>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-center gap-2 mt-10" dir="ltr">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9"
+                      disabled={currentPage <= 1}
+                      onClick={() => { setCurrentPage(p => p - 1); window.scrollTo({ top: 0, behavior: "smooth" }) }}
+                      aria-label={t("الصفحة السابقة", "Previous page")}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+
+                    {Array.from({ length: totalPages }, (_, i) => i + 1)
+                      .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                      .reduce<(number | "…")[]>((acc, p, idx, arr) => {
+                        if (idx > 0 && (p as number) - (arr[idx - 1] as number) > 1) acc.push("…")
+                        acc.push(p)
+                        return acc
+                      }, [])
+                      .map((item, idx) =>
+                        item === "…" ? (
+                          <span key={`e-${idx}`} className="px-1 text-muted-foreground">…</span>
+                        ) : (
+                          <Button
+                            key={item}
+                            variant={currentPage === item ? "default" : "outline"}
+                            size="icon"
+                            className="h-9 w-9 text-sm"
+                            onClick={() => { setCurrentPage(item as number); window.scrollTo({ top: 0, behavior: "smooth" }) }}
+                          >
+                            {item}
+                          </Button>
+                        )
+                      )}
+
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-9 w-9"
+                      disabled={currentPage >= totalPages}
+                      onClick={() => { setCurrentPage(p => p + 1); window.scrollTo({ top: 0, behavior: "smooth" }) }}
+                      aria-label={t("الصفحة التالية", "Next page")}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
 
                 {filteredServices.length === 0 && (
                   <div className="text-center py-20">
