@@ -579,13 +579,6 @@ export default function MessagesPage() {
       if (seekerError) {
       }
       if (seekerConvs && seekerConvs.length > 0) {
-          "[v0] Seeker conversations details:",
-          seekerConvs.map((c: any) => ({
-            id: c.id,
-            is_archived_by_seeker: c.is_archived_by_seeker,
-            is_archived_by_provider: c.is_archived_by_provider,
-          })),
-        )
       }
 
       // Filter non-archived conversations
@@ -607,14 +600,6 @@ export default function MessagesPage() {
           .in("provider_id", providerIds)
 
         if (pConvs && pConvs.length > 0) {
-            "[v0] Provider conversations details:",
-            pConvs.map((c: any) => ({
-              id: c.id,
-              provider_id: c.provider_id,
-              is_archived_by_seeker: c.is_archived_by_seeker,
-              is_archived_by_provider: c.is_archived_by_provider,
-            })),
-          )
         }
 
         nonArchivedProviderConvs = pConvs?.filter((c: any) => !c.is_archived_by_provider) || []
@@ -721,9 +706,6 @@ export default function MessagesPage() {
 
 
       if (existing) {
-          is_archived_by_seeker: existing.is_archived_by_seeker,
-          is_archived_by_provider: existing.is_archived_by_provider,
-        })
 
         if (existing.is_archived_by_seeker) {
           const { error: updateError } = await supabase
@@ -808,11 +790,6 @@ export default function MessagesPage() {
     const supabase = createClient()
 
     try {
-        conversation_id: selectedConversation,
-        sender_id: user.id,
-        content: newMessage,
-      })
-
       const messageContent = newMessage
       const { data, error } = await supabase
         .from("messages")
