@@ -14,4 +14,6 @@ Vercel 构建需要 `NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
 `vercel.json` 明确使用 `npm ci` 和 `npm run build`，避免平台历史 Bun 安装设置绕开 npm 锁文件。本站 Preview 的 `NEXT_PUBLIC_SITE_URL` 需要完整 HTTPS 地址，不能只填主机名或未展开的变量表达式。
 
+Vercel 使用自身适配器打包 Functions；仅该平台构建关闭 standalone 并跳过独立服务器文件复制，Docker 与本地 smoke 保持 standalone。这解决了云端实际遇到的 `next-server.js.nft.json` 缺失，与 [Next.js 上游问题 #96646](https://github.com/vercel/next.js/issues/96646) 一致。
+
 预览不创建或修改数据库 schema/RLS，不新增登录凭据，也不执行演示数据清理。

@@ -24,7 +24,9 @@ const contentSecurityPolicy = [
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: "standalone",
+  // Next 16.3's Vercel adapter skips root NFT files required by standalone.
+  // Vercel packages Functions itself; Docker and local smoke builds need standalone.
+  output: process.env.VERCEL === "1" && !smokeBuild ? undefined : "standalone",
   distDir: smokeBuild ? ".next-smoke" : ".next",
   poweredByHeader: false,
   typescript: {

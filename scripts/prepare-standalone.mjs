@@ -23,5 +23,9 @@ export function prepareStandalone(distDir = ".next", { mode = "production", env 
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   nextEnv.loadEnvConfig(process.cwd())
-  prepareStandalone()
+  if (process.env.VERCEL === "1" && process.env.ASAA_BUILD_TARGET !== "smoke") {
+    console.log("Vercel adapter packages the deployment; standalone preparation skipped.")
+  } else {
+    prepareStandalone()
+  }
 }

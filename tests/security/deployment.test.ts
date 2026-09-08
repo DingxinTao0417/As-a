@@ -79,6 +79,17 @@ describe("production environment validation", () => {
 })
 
 describe("production startup gate", () => {
+  it("lets Vercel package Functions without requiring standalone files", () => {
+    const folder = mkdtempSync(path.join(temporaryParent, "asaa-start-test-"))
+    fixtures.push(folder)
+    const result = spawnSync(process.execPath, [path.resolve("scripts/prepare-standalone.mjs")], {
+      cwd: folder, encoding: "utf8", timeout: 5000,
+      env: { NODE_ENV: "production", VERCEL: "1" },
+    })
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain("standalone preparation skipped")
+  })
+
   it("refuses a smoke artifact before launching the server", () => {
     const result = runStart("smoke")
     expect(result.status).toBe(1)
