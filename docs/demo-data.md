@@ -24,7 +24,7 @@
 
 打开 [服务目录](https://v0-professional-services-platform-ruby.vercel.app/services/seeker)，搜索 `Demo`，再切换分类。示例：[手工店视觉设计服务](https://v0-professional-services-platform-ruby.vercel.app/services/d3a00003-0000-4000-8000-000000000003)。
 
-已通过浏览器确认：目录显示 33 项服务；`Demo` 加 Design 筛选显示两项；详情显示 950 SAR 及对应服务商、交付内容；英语和阿拉伯语切换正常。没有登录、下单或测试真实付款。
+已通过浏览器确认：目录显示 33 项服务；搜索 `Demo` 显示全部 12 项演示服务及各自封面，服务商头像也从 Supabase Storage 正常加载；`Demo` 加 Design 筛选显示两项；详情显示 950 SAR 及对应服务商、交付内容；英语和阿拉伯语切换正常。18 个图片对象均返回 HTTP 200 和 `image/webp`。没有登录、下单或测试真实付款。
 
 验收同时发现详情页仍显示无依据的 5.0、ID Verified、Pro Seller、默认响应时间和最后交付时间。这些来自前端展示逻辑，**不是本次导入的认证或业绩数据**。见 [功能审查](functional-review.md) 第 7 项。正式展示可信度和开放交易前应先修复。
 
@@ -42,7 +42,7 @@ node scripts/demo/generate-catalog.mjs
 node scripts/demo/validate-catalog.mjs
 ```
 
-本地 73 项断言覆盖重复导入、匿名读取、财务隔离、RESTRICT 与旧版 CASCADE 外键、清理保护和保留无关数据。SQL 只应在核对过的目标项目 SQL Editor 中明确执行；不放入自动 migrations 或默认 seed.sql，也不运行 db reset。
+本地 103 项断言覆盖重复导入、图片关联幂等性、匿名读取、财务隔离、RESTRICT 与旧版 CASCADE 外键、清理保护和保留无关数据。SQL 只应在核对过的目标项目 SQL Editor 中明确执行；不放入自动 migrations 或默认 seed.sql，也不运行 db reset。
 
 ## 线上结构差异与实现依据
 
@@ -50,4 +50,4 @@ node scripts/demo/validate-catalog.mjs
 
 Supabase 的[官方本地 seed 示例](https://supabase.com/docs/guides/local-development/cli-workflows)使用无密码 `auth.users` 占位行供业务外键引用；本次在核对托管库结构后采用该模式，并额外使用无效域名与有限期限禁用。官方示例本身针对本地开发，本次托管项目写入与页面可见性已单独验证。
 
-上一轮本地生产加固尚未应用到线上旧库。本次目录可展示不代表支付、权限或整站已达到上线条件；当前具体阻断项记录在 [功能审查](functional-review.md) 中。本轮业务代码未修改，未 commit、push 或部署。
+上一轮本地生产加固尚未应用到线上旧库。本次目录和图片可展示不代表支付、权限或整站已达到上线条件；当前具体阻断项记录在 [功能审查](functional-review.md) 中。图片素材、生成与校验脚本已提交并推送到 `codex/production-readiness-demo`；本轮没有修改线上 schema、RLS 或支付配置。

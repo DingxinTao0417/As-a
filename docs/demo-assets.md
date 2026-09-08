@@ -9,6 +9,12 @@
 - Storage 项目：`v0_database / nbhbendahduyiobyewzw / main`
 - 数据关联：`supabase/demo/assets.sql` 只更新固定的 6 个 profile/provider UUID 和 12 个 service UUID，可重复执行。
 
+## 上线记录
+
+2026-09-08（America/Tijuana）已将 6 张头像上传到 `avatars/asaa-showcase-v1/`，将 12 张服务封面上传到 `service-images/asaa-showcase-v1/`，随后在目标项目执行 `supabase/demo/assets.sql`。执行结果为 `linked_provider_avatars = 6`、`linked_service_covers = 12`。
+
+18 个公开对象均已逐一确认返回 HTTP 200 和 `image/webp`。公开服务目录搜索 `Demo` 后可见全部 12 张封面；页面中的服务商头像也已使用上述 Storage 地址。
+
 这些 WebP 是项目内的发布副本。图像生成工具保存的 PNG 原稿仍留在本机 Codex 生成目录，没有删除。
 
 ## 生成提示词摘要
