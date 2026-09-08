@@ -799,8 +799,8 @@ export default function ProfilePage() {
             <AlertDialogTitle>{t("حذف الحساب", "Delete Account")}</AlertDialogTitle>
             <AlertDialogDescription>
               {t(
-                "هل أنت متأكد من طلب حذف حسابك؟ سيتم تسجيل خروجك وقد لا يمكن التراجع بعد معالجة الطلب.",
-                "Are you sure you want to request account deletion? You will be signed out and the request may not be reversible once processed."
+                "هل تريد طلب حذف حسابك؟ سيتم تعطيل الوصول وإخفاء خدماتك وتسجيل خروجك. تبقى سجلات المحادثات والمعاملات لحين تطبيق سياسة الاحتفاظ.",
+                "Request account deletion? Your access will be disabled, listings hidden, and you will be signed out. Conversation and transaction records remain pending the retention process."
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>

@@ -16,22 +16,22 @@ export default function AboutPage() {
       icon: Shield,
       titleAr: "الثقة أولاً",
       titleEn: "Trust First",
-      descAr: "كل محترف على المنصة يمر بعملية تحقق. دفعك محمي حتى تستلم عملك وترضى عنه.",
-      descEn: "Every professional on the platform is verified. Your payment is protected until you receive and approve your work.",
+      descAr: "راجع ملف مقدم الخدمة وأعماله وتقييماته، واتفق على تفاصيل عرض السعر قبل الدفع.",
+      descEn: "Review a provider's profile, portfolio, and reviews, and agree on the quote details before paying.",
     },
     {
       icon: Zap,
       titleAr: "سرعة الإنجاز",
       titleEn: "Fast Delivery",
-      descAr: "نظام الرسائل المباشر يختصر الوقت. تفاهم مع المحترف وابدأ مشروعك في ساعات لا أيام.",
-      descEn: "Direct messaging cuts out the waiting. Agree with your professional and start your project in hours, not days.",
+      descAr: "استخدم الرسائل لمناقشة المتطلبات وموعد التسليم مع مقدم الخدمة.",
+      descEn: "Use direct messages to discuss requirements and a delivery schedule with your provider.",
     },
     {
       icon: Heart,
-      titleAr: "دعم حقيقي",
-      titleEn: "Real Support",
-      descAr: "فريق دعم بشري يرد على استفساراتك ويتابع نزاعاتك حتى حلها. لسنا بوت.",
-      descEn: "A human support team responds to your queries and follows through on disputes until resolved. Not a bot.",
+      titleAr: "معلومات واضحة",
+      titleEn: "Clear Information",
+      descAr: "راجع تفاصيل الخدمة وحالة الطلب وسجل محادثاتك من حسابك.",
+      descEn: "Review service details, order status, and your conversation history from your account.",
     },
     {
       icon: Globe,
@@ -40,11 +40,6 @@ export default function AboutPage() {
       descAr: "بنيت للسوق السعودي بمعرفة السوق السعودي. العملة، اللغة، واحتياجات العمل المحلي في صميم التصميم.",
       descEn: "Built for the Saudi market with Saudi market knowledge. Currency, language, and local business needs are core to the design.",
     },
-  ]
-
-  const milestones = [
-    { year: "2025", eventAr: "بداية الفكرة وتطوير المنصة", eventEn: "Idea born & platform development begins" },
-    { year: "2026", eventAr: "الإطلاق الرسمي وبدء العمليات التجارية", eventEn: "Official launch & business operations begin" },
   ]
 
   return (
@@ -104,13 +99,13 @@ export default function AboutPage() {
                 </p>
               </div>
 
-              {/* Stats block */}
+              {/* Available product features */}
               <div className="grid grid-cols-2 gap-4">
                 {[
-                  { numAr: "+٥٠٠٠", numEn: "5,000+", labelAr: "محترف مسجّل", labelEn: "Professionals" },
-                  { numAr: "+١٢٠٠٠", numEn: "12,000+", labelAr: "مشروع مكتمل", labelEn: "Projects done" },
-                  { numAr: "٩٨٪", numEn: "98%", labelAr: "نسبة رضا العملاء", labelEn: "Client satisfaction" },
-                  { numAr: "٢٠+", numEn: "20+", labelAr: "تخصصاً مهنياً", labelEn: "Specialties" },
+                  { numAr: "عربي / EN", numEn: "AR / English", labelAr: "واجهة بلغتين", labelEn: "Bilingual interface" },
+                  { numAr: "ر.س", numEn: "SAR", labelAr: "أسعار بالريال السعودي", labelEn: "Prices in Saudi riyals" },
+                  { numAr: "رسائل", numEn: "Messages", labelAr: "تواصل مباشر", labelEn: "Direct conversations" },
+                  { numAr: "طلبات", numEn: "Orders", labelAr: "متابعة العمل", labelEn: "Track your work" },
                 ].map((s, i) => (
                   <div key={i} className="bg-background rounded-2xl border border-border p-6">
                     <div className="text-3xl font-bold text-foreground mb-1">{t(s.numAr, s.numEn)}</div>
@@ -149,39 +144,6 @@ export default function AboutPage() {
                     </div>
                   )
                 })}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ─── Timeline ─── */}
-        <section className="py-16 md:py-24 bg-muted/30 border-y border-border">
-          <div className="container mx-auto px-4">
-            <div className="max-w-3xl mx-auto">
-              <div className="mb-12">
-                <p className="text-xs font-semibold tracking-widest uppercase text-muted-foreground mb-3">
-                  {t("مسيرتنا", "Our journey")}
-                </p>
-                <h2 className="text-3xl font-bold text-foreground">
-                  {t("من الفكرة إلى الواقع", "From idea to reality")}
-                </h2>
-              </div>
-              <div className="relative">
-                {/* vertical line */}
-                <div className="absolute top-0 bottom-0 right-[19px] md:right-auto md:left-[19px] w-px bg-border" />
-                <div className="space-y-10">
-                  {milestones.map((m, i) => (
-                    <div key={i} className="flex items-start gap-6 relative">
-                      <div className="flex-shrink-0 w-10 h-10 rounded-full border-2 border-primary bg-background flex items-center justify-center z-10">
-                        <div className="w-2.5 h-2.5 rounded-full bg-primary" />
-                      </div>
-                      <div className="pt-1.5">
-                        <span className="text-xs font-semibold text-muted-foreground tracking-wider">{m.year}</span>
-                        <p className="text-base font-medium text-foreground mt-0.5">{t(m.eventAr, m.eventEn)}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
               </div>
             </div>
           </div>

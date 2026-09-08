@@ -1,55 +1,26 @@
 "use server"
 
 import { fail, ok } from "@/lib/action-result"
-import { requireAuth } from "@/lib/auth"
+import { AuthError, requireAuth } from "@/lib/auth"
 
 export async function requestAccountDeletion() {
   try {
-    const { user, supabase } = await requireAuth()
-
-    const { data: providers } = await supabase
-      .from("providers")
-      .select("id")
-      .eq("user_id", user.id)
-
-    const providerIds = (providers || []).map((provider: { id: string }) => provider.id)
-
-    const { data: seekerActiveOrders } = await supabase
-      .from("orders")
-      .select("id")
-      .eq("seeker_id", user.id)
-      .in("status", ["pending", "paid", "awaiting_confirmation"])
-
-    const { data: providerActiveOrders } = providerIds.length > 0
-      ? await supabase
-          .from("orders")
-          .select("id")
-          .in("provider_id", providerIds)
-          .in("status", ["pending", "paid", "awaiting_confirmation"])
-      : { data: [] }
-
-    if ((seekerActiveOrders?.length || 0) > 0 || (providerActiveOrders?.length || 0) > 0) {
-      return fail("Please complete or cancel all active orders before deleting your account")
+    const { supabase } = await requireAuth()
+    // This transaction checks all active orders and pending withdrawals and
+    // hides the provider's services before marking the account for deletion.
+    const { error } = await supabase.rpc("request_account_deletion")
+    if (error) {
+      if (error.code === "P0001") {
+        return fail("Please resolve active orders and withdrawals and settle your provider balance before deleting your account")
+      }
+      console.error("Account deletion transaction failed", { code: error.code })
+      return fail("Failed to process deletion request")
     }
-
-    const { error: profileError } = await supabase
-      .from("profiles")
-      .update({
-        deletion_requested_at: new Date().toISOString(),
-        full_name: "[Deleted User]",
-        phone: null,
-        avatar_url: null,
-      })
-      .eq("id", user.id)
-
-    if (profileError) {
-      return fail(`Failed to mark account for deletion: ${profileError.message}`)
-    }
-
     await supabase.auth.signOut()
     return ok(undefined)
   } catch (error) {
-    console.error("Failed to process deletion request", error)
+    if (error instanceof AuthError) return fail(error.message)
+    console.error("Failed to process deletion request")
     return fail("Failed to process deletion request")
   }
 }

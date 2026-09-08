@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Briefcase, ShieldCheck, Wallet, ClipboardList, Users, AlertCircle } from "lucide-react"
 import Link from "next/link"
+import { Button } from "@/components/ui/button"
 
 type Stats = {
   pendingServices: number
@@ -31,18 +32,20 @@ export default function AdminOverviewPage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [recentServices, setRecentServices] = useState<RecentService[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
 
   useEffect(() => {
     async function fetchData() {
+      try {
       const supabase = createClient()
 
       const [
-        { count: pendingServices },
-        { count: unverifiedProviders },
-        { count: pendingWithdrawals },
-        { count: totalOrders },
-        { count: totalUsers },
-        { data: services },
+        { count: pendingServices, error: servicesCountError },
+        { count: unverifiedProviders, error: providersCountError },
+        { count: pendingWithdrawals, error: withdrawalsCountError },
+        { count: totalOrders, error: ordersCountError },
+        { count: totalUsers, error: usersCountError },
+        { data: services, error: servicesError },
       ] = await Promise.all([
         supabase.from("services").select("id", { count: "exact", head: true }).eq("is_active", false),
         supabase.from("providers").select("id", { count: "exact", head: true }).eq("is_verified", false),
@@ -56,6 +59,7 @@ export default function AdminOverviewPage() {
           .order("created_at", { ascending: false })
           .limit(5),
       ])
+      if ([servicesCountError, providersCountError, withdrawalsCountError, ordersCountError, usersCountError, servicesError].some(Boolean)) throw new Error("Dashboard query failed")
 
       setStats({
         pendingServices: pendingServices || 0,
@@ -65,7 +69,8 @@ export default function AdminOverviewPage() {
         totalUsers: totalUsers || 0,
       })
       setRecentServices((services as RecentService[]) || [])
-      setLoading(false)
+      } catch { setLoadError(true) }
+      finally { setLoading(false) }
     }
 
     fetchData()
@@ -108,6 +113,10 @@ export default function AdminOverviewPage() {
       urgent: false,
     },
   ]
+
+  if (loadError) {
+    return <div className="space-y-4"><p role="alert" className="text-destructive">{t("تعذر تحميل الإحصاءات. أعد المحاولة.", "Unable to load platform statistics. Please try again.")}</p><Button onClick={() => window.location.reload()}>{t("إعادة المحاولة", "Try again")}</Button></div>
+  }
 
   if (loading) {
     return (

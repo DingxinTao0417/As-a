@@ -247,34 +247,47 @@ export default function MyServicesPage() {
 
   // ── CRUD ──
   const handleCreate = async () => {
-    if (!providerId) return
-    if (!formData.name_ar || !formData.name_en || !formData.category || !formData.price) {
+    if (!providerId || isSaving) return
+    if (!formData.name_ar.trim() || !formData.name_en.trim() || !formData.category || !Number.isFinite(Number(formData.price)) || Number(formData.price) <= 0) {
       toast({ title: t("خطأ", "Error"), description: t("يرجى ملء الحقول المطلوبة", "Please fill required fields"), variant: "destructive" }); return
     }
     if (imageFiles.length === 0) {
       toast({ title: t("خطأ", "Error"), description: t("يجب إضافة صورة واحدة على الأقل", "At least one image is required"), variant: "destructive" }); return
     }
     setIsSaving(true); setIsUploadingImages(imageFiles.length > 0)
+    try {
     const supabase = createClient()
     const { data: newService, error } = await supabase.from("services").insert({
       provider_id: providerId, name_ar: formData.name_ar, name_en: formData.name_en,
       description_ar: formData.description_ar || null, description_en: formData.description_en || null,
       category: formData.category, price: parseFloat(formData.price) || 0, price_type: formData.price_type,
-      delivery_time: formData.delivery_time || null, features: formData.features, is_active: true,
+      delivery_time: formData.delivery_time || null, features: formData.features, is_active: false,
     }).select("id").single()
     if (error || !newService) { setIsSaving(false); setIsUploadingImages(false); toast({ title: t("خطأ", "Error"), description: t("فشل في إنشاء الخدمة", "Failed to create service"), variant: "destructive" }); return }
+    let imageSaveFailed = false
     if (imageFiles.length > 0) {
       const urls = await uploadImages(newService.id)
-      if (urls.length > 0) await supabase.from("services").update({ image_urls: urls }).eq("id", newService.id)
+      imageSaveFailed = urls.length !== imageFiles.length
+      if (urls.length > 0) {
+        const { error: imageError } = await supabase.from("services").update({ image_urls: urls }).eq("id", newService.id)
+        if (imageError) imageSaveFailed = true
+      }
     }
     setIsSaving(false); setIsUploadingImages(false)
-    toast({ title: t("تم بنجاح", "Success"), description: t("تم إنشاء الخدمة بنجاح", "Service created successfully") })
+    toast({ title: t("تم حفظ الخدمة", "Service saved"), description: imageSaveFailed ? t("تم حفظ المسودة، لكن بعض الصور لم تُحفظ. افتح التعديل لإضافتها مجدداً.", "Your draft was saved, but some images were not saved. Edit the service to upload them again.") : t("تم إرسال الخدمة للمراجعة. ستظهر للعملاء بعد الموافقة.", "Your service has been submitted for review and will appear to customers after approval."), variant: imageSaveFailed ? "destructive" : "default" })
     setShowCreateDialog(false); resetForm(); await fetchServices(providerId)
+    } catch {
+      toast({ title: t("خطأ", "Error"), description: t("تعذر حفظ الخدمة. أعد تحميل القائمة قبل المحاولة مجدداً.", "Unable to finish saving. Reload your services before trying again."), variant: "destructive" })
+    } finally { setIsSaving(false); setIsUploadingImages(false) }
   }
 
   const handleEdit = async () => {
-    if (!providerId || !selectedService) return
+    if (!providerId || !selectedService || isSaving) return
+    if (!formData.name_ar.trim() || !formData.name_en.trim() || !formData.category || !Number.isFinite(Number(formData.price)) || Number(formData.price) <= 0 || existingImageUrls.length + imageFiles.length === 0) {
+      toast({ title: t("خطأ", "Error"), description: t("أكمل الحقول المطلوبة وأضف سعراً صالحاً وصورة واحدة على الأقل.", "Fill the required fields, enter a positive price, and add at least one image."), variant: "destructive" }); return
+    }
     setIsSaving(true); setIsUploadingImages(imageFiles.length > 0)
+    try {
     const supabase = createClient()
     let newUrls: string[] = []
     if (imageFiles.length > 0) newUrls = await uploadImages(selectedService.id)
@@ -287,8 +300,12 @@ export default function MyServicesPage() {
     }).eq("id", selectedService.id)
     setIsSaving(false); setIsUploadingImages(false)
     if (error) { toast({ title: t("خطأ", "Error"), description: t("فشل في تحديث الخدمة", "Failed to update service"), variant: "destructive" }); return }
-    toast({ title: t("تم بنجاح", "Success"), description: t("تم تحديث الخدمة بنجاح", "Service updated successfully") })
+    const imageSaveFailed = newUrls.length !== imageFiles.length
+    toast({ title: t("تم حفظ الخدمة", "Service saved"), description: imageSaveFailed ? t("بعض الصور لم تُرفع. افتح التعديل لإضافتها مجدداً.", "Some images could not be uploaded. Edit the service to add them again.") : t("تم تحديث الخدمة وإرسالها للمراجعة.", "Service updated and submitted for review."), variant: imageSaveFailed ? "destructive" : "default" })
     setShowEditDialog(false); setSelectedService(null); resetForm(); await fetchServices(providerId)
+    } catch {
+      toast({ title: t("خطأ", "Error"), description: t("تعذر تحديث الخدمة. يرجى المحاولة مجدداً.", "Unable to update your service. Please try again."), variant: "destructive" })
+    } finally { setIsSaving(false); setIsUploadingImages(false) }
   }
 
   const handleDelete = async () => {
@@ -310,8 +327,16 @@ export default function MyServicesPage() {
   const handleViewReviews = async (s: Service) => {
     setSelectedService(s); setShowReviewsDialog(true); setIsLoadingReviews(true)
     const supabase = createClient()
-    const { data } = await supabase.from("reviews").select(`id, rating, comment, created_at, profiles!reviewer_id(full_name, avatar_url)`).eq("service_id", s.id).order("created_at", { ascending: false })
-    setReviewsList(data || []); setIsLoadingReviews(false)
+    try {
+      const { data, error } = await supabase.from("reviews").select("id, rating, comment, created_at, reviewer_id").eq("service_id", s.id).order("created_at", { ascending: false })
+      if (error) throw error
+      const ids = [...new Set((data || []).map((review) => review.reviewer_id))]
+      const { data: profiles } = ids.length ? await supabase.from("public_profiles").select("id, full_name, avatar_url").in("id", ids) : { data: [] }
+      setReviewsList((data || []).map((review) => ({ ...review, profiles: profiles?.find((profile) => profile.id === review.reviewer_id) || null })))
+    } catch {
+      setReviewsList([])
+      toast({ title: t("خطأ", "Error"), description: t("تعذر تحميل التقييمات.", "Unable to load reviews."), variant: "destructive" })
+    } finally { setIsLoadingReviews(false) }
   }
 
   const getCategoryLabel = (v: string) => { const c = categories.find(x => x.value === v); return c ? (language === "ar" ? c.label_ar : c.label_en) : v }

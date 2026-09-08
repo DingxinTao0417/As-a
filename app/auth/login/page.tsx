@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { safeAuthNext } from "@/components/auth-navigation"
 import { useLanguage } from "@/components/language-provider"
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
@@ -21,6 +22,11 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
   const { language, isRTL } = useLanguage()
+  const [callbackFailed, setCallbackFailed] = useState(false)
+
+  useEffect(() => {
+    setCallbackFailed(new URLSearchParams(window.location.search).get("error") === "auth_callback_failed")
+  }, [])
 
   const content = {
     ar: {
@@ -51,17 +57,19 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    const supabase = createClient()
+    if (isLoading) return
     setIsLoading(true)
     setError(null)
 
     try {
+      const supabase = createClient()
       const { error } = await supabase.auth.signInWithPassword({
-        email,
+        email: email.trim(),
         password,
       })
       if (error) throw error
-      router.push("/")
+      const next = safeAuthNext(new URLSearchParams(window.location.search).get("next"))
+      router.replace(next)
       router.refresh()
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "An error occurred")
@@ -87,6 +95,8 @@ export default function LoginPage() {
                   <Label htmlFor="email">{t.email}</Label>
                   <Input
                     id="email"
+                    name="email"
+                    autoComplete="email"
                     type="email"
                     placeholder={t.emailPlaceholder}
                     required
@@ -97,19 +107,22 @@ export default function LoginPage() {
                 <div className="grid gap-2">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="password">{t.password}</Label>
-                    <Link href="/auth/login" className="text-xs text-muted-foreground hover:text-primary transition-colors" tabIndex={-1}>
+                    <Link href="/auth/forgot-password" className="text-xs text-muted-foreground hover:text-primary transition-colors">
                       {language === "ar" ? "نسيت كلمة المرور؟" : "Forgot password?"}
                     </Link>
                   </div>
                   <Input
                     id="password"
+                    name="password"
+                    autoComplete="current-password"
                     type="password"
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                   />
                 </div>
-                {error && <p className="text-sm text-red-500">{error}</p>}
+                {callbackFailed && <p role="alert" className="text-sm text-destructive">{language === "ar" ? "الرابط غير صالح أو انتهت صلاحيته. سجّل الدخول أو اطلب رابطاً جديداً." : "This link is invalid or expired. Sign in or request a new link."}</p>}
+                {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
                 <Button type="submit" className="w-full" disabled={isLoading}>
                   {isLoading ? t.loggingIn : t.loginButton}
                 </Button>

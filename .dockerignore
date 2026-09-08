@@ -1,0 +1,11 @@
+.git
+.next
+.next-smoke
+node_modules
+.env*
+!.env.example
+ai_services
+.validation
+coverage
+playwright-report
+test-results

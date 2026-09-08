@@ -4,6 +4,7 @@ import { Cairo } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { LanguageProvider } from "@/components/language-provider"
 import { GlobalCustomerServiceLoader } from "@/components/global-customer-service-loader"
+import { Toaster } from "@/components/ui/toaster"
 import "./globals.css"
 
 const cairo = Cairo({
@@ -15,7 +16,6 @@ const cairo = Cairo({
 export const metadata: Metadata = {
   title: "أسعى - As'aa | Professional Services Platform",
   description: "أسعى.. والباقي علينا - Connect with skilled professionals in Saudi Arabia",
-  generator: "v0.app",
   icons: {
     icon: [
       {
@@ -46,8 +46,9 @@ export default function RootLayout({
         <LanguageProvider>
           {children}
           <GlobalCustomerServiceLoader />
+          <Toaster />
         </LanguageProvider>
-        <Analytics />
+        {process.env.NEXT_PUBLIC_ENABLE_ANALYTICS === "true" && <Analytics />}
       </body>
     </html>
   )

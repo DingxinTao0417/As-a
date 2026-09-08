@@ -8,6 +8,7 @@
 
 # next.js
 /.next/
+/.next-smoke/
 /out/
 
 # production
@@ -40,3 +41,9 @@ ai_service/data/
 .claude/
 .hermes/
 supabase/.temp/
+
+# Local verification artifacts
+/coverage/
+/playwright-report/
+/test-results/
+/.validation/

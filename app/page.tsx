@@ -30,13 +30,15 @@ export default function HomePage() {
 
   useEffect(() => {
     async function checkUser() {
+      try {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
-        const role = user.user_metadata?.role || "seeker"
-        setUserRole(role)
+        const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle()
+        setUserRole(profile?.role === "provider" ? "provider" : "seeker")
       }
-      setRoleChecked(true)
+      } catch { setUserRole(null) }
+      finally { setRoleChecked(true) }
     }
     checkUser()
   }, [])
@@ -46,22 +48,22 @@ export default function HomePage() {
       icon: CheckCircle2,
       titleAr: "الالتزام",
       titleEn: "Commitment",
-      descAr: "نضمن تنفيذ مهامك بأعلى جودة وفي الوقت المحدد",
-      descEn: "Your tasks delivered on time and to the highest standard",
+      descAr: "اتفق على نطاق العمل وتفاصيل التسليم قبل بدء المشروع",
+      descEn: "Agree on the scope and delivery details before starting a project",
     },
     {
       icon: ShieldCheck,
       titleAr: "الاحترافية",
       titleEn: "Professionalism",
-      descAr: "محترفون موثّقون ومعتمدون في تخصصاتهم",
-      descEn: "Verified and certified professionals in their fields",
+      descAr: "راجع مهارات مقدمي الخدمات وأعمالهم قبل الاختيار",
+      descEn: "Review providers' skills and portfolios before choosing",
     },
     {
       icon: Star,
       titleAr: "الثقة",
       titleEn: "Trust",
-      descAr: "منصة آمنة تحفظ حقوق جميع الأطراف",
-      descEn: "A secure platform that protects everyone's rights",
+      descAr: "تابع عروض الأسعار والمحادثات وحالة الطلب في مكان واحد",
+      descEn: "Keep quotes, conversations, and order status in one place",
     },
     {
       icon: TrendingUp,
@@ -84,43 +86,37 @@ export default function HomePage() {
       icon: Code,
       titleAr: "البرمجة والتطوير",
       titleEn: "Development",
-      priceAr: "تبدأ من ٥٠٠ ر.س",
-      priceEn: "From 500 SAR",
+      category: "development",
     },
     {
       icon: Palette,
       titleAr: "التصميم",
       titleEn: "Design",
-      priceAr: "تبدأ من ٣٠٠ ر.س",
-      priceEn: "From 300 SAR",
+      category: "design",
     },
     {
       icon: Megaphone,
       titleAr: "التسويق الرقمي",
       titleEn: "Digital Marketing",
-      priceAr: "تبدأ من ٤٠٠ ر.س",
-      priceEn: "From 400 SAR",
+      category: "marketing",
     },
     {
       icon: Camera,
       titleAr: "التصوير والمونتاج",
       titleEn: "Photo & Video",
-      priceAr: "تبدأ من ٦٠٠ ر.س",
-      priceEn: "From 600 SAR",
+      category: "video",
     },
     {
       icon: FileText,
       titleAr: "الكتابة والترجمة",
       titleEn: "Writing & Translation",
-      priceAr: "تبدأ من ٢٠٠ ر.س",
-      priceEn: "From 200 SAR",
+      category: "writing",
     },
     {
       icon: Briefcase,
       titleAr: "الاستشارات",
       titleEn: "Consulting",
-      priceAr: "تبدأ من ٣٥٠ ر.س",
-      priceEn: "From 350 SAR",
+      category: "consulting",
     },
   ]
 
@@ -198,7 +194,7 @@ export default function HomePage() {
           <div className="container mx-auto px-4">
             <div className="text-center mb-12">
               <h2 className="text-3xl md:text-4xl font-bold text-secondary mb-4">
-                {t("خدمات مميّزة", "Featured Services")}
+                {t("تصفّح التخصصات", "Browse Categories")}
               </h2>
               <p className="text-muted-foreground text-lg">
                 {t(
@@ -211,7 +207,7 @@ export default function HomePage() {
               {services.map((service, index) => {
                 const Icon = service.icon
                 return (
-                  <Link key={index} href="/services/seeker">
+                  <Link key={index} href={`/services/seeker?category=${service.category}`}>
                     <Card className="p-6 hover:shadow-lg transition-all hover:scale-105 cursor-pointer">
                       <div className="flex items-start gap-4">
                         <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
@@ -219,7 +215,7 @@ export default function HomePage() {
                         </div>
                         <div className="flex-1">
                           <h3 className="font-semibold text-lg mb-2">{t(service.titleAr, service.titleEn)}</h3>
-                          <p className="text-sm text-primary font-medium">{t(service.priceAr, service.priceEn)}</p>
+                          <p className="text-sm text-primary font-medium">{t("تصفّح الخدمات والأسعار", "View services and prices")}</p>
                         </div>
                       </div>
                     </Card>
@@ -257,7 +253,7 @@ export default function HomePage() {
                   </div>
                   <h3 className="text-xl font-semibold">{t("حدّد احتياجك", "Define Your Need")}</h3>
                   <p className="text-muted-foreground">
-                    {t("تصفّح الخدمات أو أنشئ طلبًا واضحًا", "Browse services or post a clear request")}
+                    {t("تصفّح الخدمات وناقش متطلباتك مع مقدم الخدمة", "Browse services and discuss your requirements with a provider")}
                   </p>
                 </div>
               </div>
@@ -279,7 +275,7 @@ export default function HomePage() {
                   </div>
                   <h3 className="text-xl font-semibold">{t("استلم النتيجة", "Get Results")}</h3>
                   <p className="text-muted-foreground">
-                    {t("استلم عملك بجودة عالية وادفع بأمان", "Receive quality work and pay securely")}
+                    {t("تابع الطلب وراجع العمل ثم أكد اكتماله", "Track the order, review the work, and confirm completion")}
                   </p>
                 </div>
               </div>
@@ -301,8 +297,8 @@ export default function HomePage() {
                 {userRole === "provider"
                   ? t("تابع طلباتك وأرباحك من لوحة التحكم", "Track your orders and earnings from the dashboard")
                   : t(
-                      "انضم إلى أسعى وابدأ بتقديم خدماتك لآلاف العملاء في المملكة",
-                      "Join As'a and start offering your services to thousands of clients across Saudi Arabia",
+                      "انضم إلى أسعى وأنشئ ملفك وابدأ بعرض خدماتك",
+                      "Join As'a, create your profile, and start listing your services",
                     )}
               </p>
               <Button size="lg" className="bg-primary hover:bg-primary/90 text-lg px-8" asChild>

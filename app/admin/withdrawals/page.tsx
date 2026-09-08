@@ -15,6 +15,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { CheckCircle, XCircle, Clock, DollarSign } from "lucide-react"
+import { reviewWithdrawal } from "@/app/actions/admin"
 
 type WithdrawalRow = {
   id: string
@@ -48,15 +49,19 @@ export default function AdminWithdrawalsPage() {
   const [actionDialog, setActionDialog] = useState<{ row: WithdrawalRow; type: "approve" | "reject" } | null>(null)
   const [notes, setNotes] = useState("")
   const [processing, setProcessing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   async function fetchWithdrawals() {
+    try {
     const supabase = createClient()
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("withdrawal_requests")
       .select("*, providers(name_ar, name_en, avatar_url)")
       .order("requested_at", { ascending: false })
+    if (error) throw error
     setWithdrawals((data as WithdrawalRow[]) || [])
-    setLoading(false)
+    } catch { setError("Unable to load withdrawals. Please refresh and try again.") }
+    finally { setLoading(false) }
   }
 
   useEffect(() => { fetchWithdrawals() }, [])
@@ -66,18 +71,13 @@ export default function AdminWithdrawalsPage() {
   )
 
   const handleAction = async () => {
-    if (!actionDialog) return
+    if (!actionDialog || processing) return
     setProcessing(true)
-    const supabase = createClient()
-    const newStatus = actionDialog.type === "approve" ? "approved" : "rejected"
-    await supabase
-      .from("withdrawal_requests")
-      .update({
-        status: newStatus,
-        processed_at: new Date().toISOString(),
-        notes: notes || null,
-      })
-      .eq("id", actionDialog.row.id)
+    setError(null)
+    try {
+    const newStatus = actionDialog.type === "approve" ? "completed" : "rejected"
+    const result = await reviewWithdrawal(actionDialog.row.id, newStatus, notes.trim())
+    if (!result.success) throw new Error(result.error)
     setWithdrawals((prev) =>
       prev.map((w) =>
         w.id === actionDialog.row.id
@@ -87,7 +87,8 @@ export default function AdminWithdrawalsPage() {
     )
     setActionDialog(null)
     setNotes("")
-    setProcessing(false)
+    } catch (error) { setError(error instanceof Error ? error.message : "Unable to review withdrawal.") }
+    finally { setProcessing(false) }
   }
 
   const filterLabels: Record<Filter, [string, string]> = {
@@ -110,6 +111,7 @@ export default function AdminWithdrawalsPage() {
 
   return (
     <div className="space-y-6">
+      {error && <p role="alert" className="rounded-md border border-destructive p-3 text-sm text-destructive">{error}</p>}
       <div>
         <h1 className="text-2xl font-bold">{t("طلبات السحب", "Withdrawal Requests")}</h1>
         <p className="text-muted-foreground mt-1">
@@ -190,14 +192,14 @@ export default function AdminWithdrawalsPage() {
                       </Badge>
                     </td>
                     <td className="px-4 py-3">
-                      {row.status === "pending" ? (
+                      {row.status === "pending" || row.status === "approved" ? (
                         <div className="flex gap-2">
                           <Button
                             size="sm"
                             onClick={() => { setActionDialog({ row, type: "approve" }); setNotes("") }}
                           >
                             <CheckCircle className="h-3.5 w-3.5 me-1" />
-                            {t("قبول", "Approve")}
+                            {t("تأكيد التحويل", "Record transfer")}
                           </Button>
                           <Button
                             size="sm"
@@ -224,17 +226,19 @@ export default function AdminWithdrawalsPage() {
       </Card>
 
       {/* Confirm Dialog */}
-      <Dialog open={!!actionDialog} onOpenChange={() => setActionDialog(null)}>
+      <Dialog open={!!actionDialog} onOpenChange={(open) => { if (!open && !processing) setActionDialog(null) }}>
         {actionDialog && (
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>
                 {actionDialog.type === "approve"
-                  ? t("تأكيد قبول الطلب", "Confirm Approval")
+                  ? t("تأكيد إتمام التحويل البنكي", "Confirm completed bank transfer")
                   : t("تأكيد رفض الطلب", "Confirm Rejection")}
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
+              {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+              {actionDialog.type === "approve" && <p className="text-sm text-muted-foreground">{t("سجّل الطلب كمكتمل فقط بعد التحقق من تحويل المبلغ إلى مقدم الخدمة. هذه الخطوة لا ترسل الأموال.", "Mark this request completed only after verifying that the provider received the transfer. This action records the transfer and does not send funds.")}</p>}
               <div className="bg-muted/50 rounded-lg p-4 text-sm space-y-2">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">{t("مقدم الخدمة", "Provider")}</span>
@@ -252,10 +256,12 @@ export default function AdminWithdrawalsPage() {
                 </div>
               </div>
               <div>
-                <label className="text-sm font-medium mb-1.5 block">
-                  {t("ملاحظات (اختياري)", "Notes (optional)")}
+                <label htmlFor="withdrawal-notes" className="text-sm font-medium mb-1.5 block">
+                  {actionDialog.type === "approve" ? t("مرجع التحويل", "Transfer reference") : t("سبب الرفض", "Reason for rejection")}
                 </label>
                 <Textarea
+                  id="withdrawal-notes"
+                  maxLength={1000}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder={t("أضف ملاحظة...", "Add a note...")}
@@ -264,15 +270,15 @@ export default function AdminWithdrawalsPage() {
               </div>
             </div>
             <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={() => setActionDialog(null)}>
+              <Button variant="outline" disabled={processing} onClick={() => setActionDialog(null)}>
                 {t("إلغاء", "Cancel")}
               </Button>
               <Button
                 variant={actionDialog.type === "approve" ? "default" : "destructive"}
                 onClick={handleAction}
-                disabled={processing}
+                disabled={processing || notes.trim().length < 3}
               >
-                {actionDialog.type === "approve" ? t("تأكيد القبول", "Confirm Approval") : t("تأكيد الرفض", "Confirm Rejection")}
+                {actionDialog.type === "approve" ? t("تم التحويل", "Record as paid") : t("تأكيد الرفض", "Confirm Rejection")}
               </Button>
             </DialogFooter>
           </DialogContent>

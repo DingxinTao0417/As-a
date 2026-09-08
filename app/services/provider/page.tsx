@@ -19,31 +19,32 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { createClient } from "@/lib/supabase/client"
+import { PLATFORM_FEE_PERCENTAGE } from "@/lib/money"
 
 export default function ServiceProviderPage() {
   const { t } = useLanguage()
   const router = useRouter()
 
-  const handleStartNow = () => {
-    // Mark that user has seen the introduction page
-    sessionStorage.setItem("provider_intro_seen", "true")
-    router.push("/register/provider")
+  const handleStartNow = async () => {
+    const { data } = await createClient().auth.getUser()
+    router.push(data.user ? "/register/provider" : "/auth/signup?role=provider")
   }
 
   const benefits = [
     {
       icon: Users,
-      titleAr: "وصول لآلاف العملاء",
-      titleEn: "Access to Thousands of Clients",
+      titleAr: "اعرض خدماتك",
+      titleEn: "Showcase Your Services",
       descAr: "اعرض خدماتك لقاعدة واسعة من العملاء المحتملين في السعودية",
       descEn: "Showcase your services to a wide base of potential clients in Saudi Arabia",
     },
     {
       icon: DollarSign,
-      titleAr: "دخل إضافي مضمون",
-      titleEn: "Guaranteed Additional Income",
-      descAr: "حدد أسعارك بنفسك واحصل على دخل ثابت ومستقر",
-      descEn: "Set your own prices and earn stable, consistent income",
+      titleAr: "حدد أسعارك",
+      titleEn: "Set Your Prices",
+      descAr: "حدد سعر خدماتك وأرسل عروض أسعار واضحة للعملاء",
+      descEn: "Set service prices and send clear quotes to clients",
     },
     {
       icon: Calendar,
@@ -54,17 +55,17 @@ export default function ServiceProviderPage() {
     },
     {
       icon: Shield,
-      titleAr: "حماية قانونية",
-      titleEn: "Legal Protection",
-      descAr: "عقود محكمة وضمان حقوقك المالية",
-      descEn: "Secure contracts and guaranteed financial rights",
+      titleAr: "تفاصيل واضحة",
+      titleEn: "Clear Order Details",
+      descAr: "احتفظ بنطاق العمل وعرض السعر والمحادثات في حسابك",
+      descEn: "Keep the work scope, quote, and conversations in your account",
     },
     {
       icon: Star,
       titleAr: "بناء سمعتك",
       titleEn: "Build Your Reputation",
-      descAr: "احصل على تقييمات إيجابية وعزز ملفك المهني",
-      descEn: "Get positive reviews and enhance your professional profile",
+      descAr: "اعرض خبراتك وأعمالك في ملفك المهني",
+      descEn: "Show your experience and past work in your professional profile",
     },
     {
       icon: TrendingUp,
@@ -109,17 +110,17 @@ export default function ServiceProviderPage() {
   const features = [
     {
       icon: CheckCircle2,
-      titleAr: "التحقق من الهوية",
-      titleEn: "Identity Verification",
-      descAr: "عملية توثيق سريعة وآمنة",
-      descEn: "Fast and secure verification process",
+      titleAr: "مراجعة الخدمات",
+      titleEn: "Service Review",
+      descAr: "تُراجع الخدمات قبل ظهورها للعملاء",
+      descEn: "Services are reviewed before appearing to clients",
     },
     {
       icon: Clock,
-      titleAr: "دعم فني 24/7",
-      titleEn: "24/7 Technical Support",
-      descAr: "فريق دعم متاح لمساعدتك دائماً",
-      descEn: "Support team always available to help",
+      titleAr: "رسائل مباشرة",
+      titleEn: "Direct Messages",
+      descAr: "ناقش احتياجات المشروع مع العميل من داخل حسابك",
+      descEn: "Discuss project requirements with clients from your account",
     },
     {
       icon: Briefcase,
@@ -127,60 +128,6 @@ export default function ServiceProviderPage() {
       titleEn: "Advanced Dashboard",
       descAr: "إدارة سهلة لخدماتك وطلباتك",
       descEn: "Easy management of your services and orders",
-    },
-  ]
-
-  const pricing = [
-    {
-      titleAr: "باقة البداية",
-      titleEn: "Starter Plan",
-      priceAr: "مجاناً",
-      priceEn: "Free",
-      featuresAr: ["عرض حتى 3 خدمات", "عمولة 15% على كل طلب", "دعم فني أساسي", "ملف شخصي عادي"],
-      featuresEn: ["Up to 3 services", "15% commission per order", "Basic technical support", "Standard profile"],
-    },
-    {
-      titleAr: "باقة المحترف",
-      titleEn: "Professional Plan",
-      priceAr: "99 ريال/شهرياً",
-      priceEn: "99 SAR/month",
-      featuresAr: [
-        "عرض حتى 10 خدمات",
-        "عمولة 10% على كل طلب",
-        "دعم فني متقدم",
-        "ملف شخصي مميز",
-        "ظهور أولوية في البحث",
-      ],
-      featuresEn: [
-        "Up to 10 services",
-        "10% commission per order",
-        "Advanced technical support",
-        "Premium profile",
-        "Priority in search results",
-      ],
-      popular: true,
-    },
-    {
-      titleAr: "باقة النخبة",
-      titleEn: "Elite Plan",
-      priceAr: "199 ريال/شهرياً",
-      priceEn: "199 SAR/month",
-      featuresAr: [
-        "خدمات غير محدودة",
-        "عمولة 5% على كل طلب",
-        "دعم فني مخصص",
-        "ملف شخصي VIP",
-        "أولوية قصوى في البحث",
-        "تحليلات متقدمة",
-      ],
-      featuresEn: [
-        "Unlimited services",
-        "5% commission per order",
-        "Dedicated technical support",
-        "VIP profile",
-        "Top priority in search",
-        "Advanced analytics",
-      ],
     },
   ]
 
@@ -302,47 +249,18 @@ export default function ServiceProviderPage() {
           <div className="container mx-auto px-4">
             <div className="text-center mb-12">
               <h2 className="text-3xl md:text-4xl font-bold text-secondary mb-4">
-                {t("اختر الباقة المناسبة لك", "Choose Your Plan")}
+                {t("رسوم واضحة", "Clear Pricing")}
               </h2>
               <p className="text-muted-foreground text-lg">
-                {t("خطط مرنة تناسب جميع المستويات", "Flexible plans for all levels")}
+                {t("راجع الرسوم وصافي أرباحك عند إنشاء كل عرض سعر", "Review the fee and your earnings when creating each quote")}
               </p>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto">
-              {pricing.map((plan, index) => (
-                <Card key={index} className={`p-6 ${plan.popular ? "border-2 border-primary shadow-lg relative" : ""}`}>
-                  {plan.popular && (
-                    <div className="absolute top-0 right-1/2 translate-x-1/2 -translate-y-1/2">
-                      <span className="bg-primary text-primary-foreground px-4 py-1 rounded-full text-sm font-semibold">
-                        {t("الأكثر شعبية", "Most Popular")}
-                      </span>
-                    </div>
-                  )}
-                  <div className="space-y-6">
-                    <div className="text-center">
-                      <h3 className="text-2xl font-bold mb-2">{t(plan.titleAr, plan.titleEn)}</h3>
-                      <div className="text-3xl font-bold text-primary mb-4">{t(plan.priceAr, plan.priceEn)}</div>
-                    </div>
-                    <ul className="space-y-3">
-                      {plan.featuresAr.map((_, featureIndex) => (
-                        <li key={featureIndex} className="flex items-start gap-2">
-                          <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
-                          <span className="text-sm">
-                            {t(plan.featuresAr[featureIndex], plan.featuresEn[featureIndex])}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                    <Button
-                      className={`w-full ${plan.popular ? "bg-primary" : ""}`}
-                      variant={plan.popular ? "default" : "outline"}
-                    >
-                      {t("اختر هذه الباقة", "Choose This Plan")}
-                    </Button>
-                  </div>
-                </Card>
-              ))}
-            </div>
+            <Card className="p-8 max-w-xl mx-auto text-center space-y-5">
+              <h3 className="text-xl font-semibold">{t("رسوم المنصة لكل طلب", "Platform fee per order")}</h3>
+              <p className="text-4xl font-bold text-primary">{PLATFORM_FEE_PERCENTAGE * 100}%</p>
+              <p className="text-sm text-muted-foreground">{t("تُخصم رسوم المنصة من مبلغ الطلب، ويظهر صافي المبلغ المستحق لك قبل إرسال العرض.", "The platform fee is deducted from the order amount. Your net earnings are shown before you send the quote.")}</p>
+              <Button onClick={handleStartNow}>{t("إنشاء ملف مقدم خدمة", "Create a provider profile")}</Button>
+            </Card>
           </div>
         </section>
 

@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Search, CheckCircle, XCircle, Eye, DollarSign, Clock } from "lucide-react"
+import { setServiceActive } from "@/app/actions/admin"
 
 type ServiceRow = {
   id: string
@@ -47,15 +48,19 @@ export default function AdminServicesPage() {
   const [search, setSearch] = useState("")
   const [preview, setPreview] = useState<ServiceRow | null>(null)
   const [toggling, setToggling] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   async function fetchServices() {
+    try {
     const supabase = createClient()
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("services")
       .select("*, providers(name_ar, name_en, avatar_url)")
       .order("created_at", { ascending: false })
+    if (error) throw error
     setServices((data as ServiceRow[]) || [])
-    setLoading(false)
+    } catch { setError("Unable to load services. Please refresh and try again.") }
+    finally { setLoading(false) }
   }
 
   useEffect(() => { fetchServices() }, [])
@@ -69,13 +74,18 @@ export default function AdminServicesPage() {
   })
 
   const handleToggle = async (service: ServiceRow) => {
+    if (toggling) return
     setToggling(service.id)
-    const supabase = createClient()
-    await supabase.from("services").update({ is_active: !service.is_active }).eq("id", service.id)
+    setError(null)
+    try {
+    const result = await setServiceActive(service.id, !service.is_active)
+    if (!result.success) throw new Error(result.error)
     setServices((prev) =>
       prev.map((s) => s.id === service.id ? { ...s, is_active: !s.is_active } : s)
     )
-    setToggling(null)
+    setPreview((current) => current?.id === service.id ? { ...current, is_active: !service.is_active } : current)
+    } catch (error) { setError(error instanceof Error ? error.message : "Unable to update service.") }
+    finally { setToggling(null) }
   }
 
   const filterLabels: Record<Filter, [string, string]> = {
@@ -94,6 +104,7 @@ export default function AdminServicesPage() {
 
   return (
     <div className="space-y-6">
+      {error && <p role="alert" className="rounded-md border border-destructive p-3 text-sm text-destructive">{error}</p>}
       <div>
         <h1 className="text-2xl font-bold">{t("مراجعة الخدمات", "Services Review")}</h1>
         <p className="text-muted-foreground mt-1">

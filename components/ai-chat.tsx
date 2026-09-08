@@ -5,6 +5,8 @@ import { Bot, Send, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import Link from "next/link"
+import { ChatRequestError, chatErrorText, sendChat } from "@/lib/chat-client"
 
 type ChatMessage = { id: string; role: "user" | "assistant"; content: string }
 
@@ -17,6 +19,7 @@ export function AICustomerServiceChat({ language = "en", onClose }: AICustomerSe
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [errorStatus, setErrorStatus] = useState<number | null>(null)
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -28,36 +31,26 @@ export function AICustomerServiceChat({ language = "en", onClose }: AICustomerSe
     setMessages(nextMessages)
     setInput("")
     setIsLoading(true)
+    setErrorStatus(null)
 
     try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: nextMessages }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || "Chat request failed")
-      setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: data.message }])
-    } catch {
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: language === "ar" ? "عذراً، خدمة الدردشة غير متاحة حالياً." : "Sorry, chat is unavailable right now.",
-        },
-      ])
+      const message = await sendChat(nextMessages)
+      setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: message }])
+    } catch (error) {
+      setErrorStatus(error instanceof ChatRequestError ? error.status : 503)
+      setMessages(messages)
+      setInput(content)
     } finally {
       setIsLoading(false)
     }
   }
 
   return (
-    <Card className="fixed bottom-4 right-4 w-[calc(100vw-2rem)] max-w-96 h-[500px] flex flex-col shadow-lg z-50 overflow-hidden">
+    <Card className="fixed bottom-4 right-4 w-[calc(100vw-2rem)] max-w-96 h-[min(500px,calc(100dvh-2rem))] flex flex-col shadow-lg z-50 overflow-hidden">
       <div className="flex items-center justify-between p-4 border-b">
         <div className="flex items-center gap-2">
           <Bot className="w-5 h-5" />
-          <h3 className="font-semibold">{language === "ar" ? "مساعد أسعى" : "As'a Assistant"}</h3>
+          <h3 className="font-semibold">{language === "ar" ? "مساعد أسعى الذكي" : "As'a AI Assistant"}</h3>
         </div>
         {onClose && (
           <Button variant="ghost" size="icon" onClick={onClose} aria-label={language === "ar" ? "إغلاق" : "Close"}>
@@ -81,8 +74,13 @@ export function AICustomerServiceChat({ language = "en", onClose }: AICustomerSe
         )}
       </div>
 
+      {errorStatus !== null && <div role="alert" className="px-4 py-2 text-sm text-destructive">
+        {chatErrorText(errorStatus, language)}
+        {errorStatus === 401 && <Link href="/auth/login" className="ms-2 underline">{language === "ar" ? "تسجيل الدخول" : "Sign in"}</Link>}
+      </div>}
       <form onSubmit={handleSubmit} className="p-4 border-t flex gap-2">
         <Input
+          maxLength={4000}
           value={input}
           onChange={(event) => setInput(event.target.value)}
           placeholder={language === "ar" ? "اكتب رسالتك..." : "Type your message..."}

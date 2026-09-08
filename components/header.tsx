@@ -28,6 +28,7 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
 import type { User as SupabaseUser } from "@supabase/supabase-js"
+import { useToast } from "@/hooks/use-toast"
 
 export function Header() {
   const { language, setLanguage, t } = useLanguage()
@@ -36,34 +37,42 @@ export function Header() {
   const [userRole, setUserRole] = useState<"seeker" | "provider" | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const router = useRouter()
+  const { toast } = useToast()
 
   useEffect(() => {
     const supabase = createClient()
 
     supabase.auth.getUser().then(({ data: { user } }) => {
       setUser(user)
-      if (user) {
-        setUserRole(user.user_metadata?.role || "seeker")
-      }
-    })
+    }).catch(() => setUser(null))
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
-      if (session?.user) {
-        setUserRole(session.user.user_metadata?.role || "seeker")
-      } else {
-        setUserRole(null)
-      }
     })
 
     return () => subscription.unsubscribe()
   }, [])
 
+  useEffect(() => {
+    let active = true
+    setUserRole(null)
+    if (user) {
+      void createClient().from("profiles").select("role").eq("id", user.id).maybeSingle().then(({ data }) => {
+        if (active) setUserRole(data?.role === "provider" ? "provider" : "seeker")
+      })
+    }
+    return () => { active = false }
+  }, [user?.id])
+
   const handleLogout = async () => {
     const supabase = createClient()
-    await supabase.auth.signOut()
+    const { error } = await supabase.auth.signOut()
+    if (error) {
+      toast({ title: t("تعذر تسجيل الخروج", "Unable to sign out"), description: t("يرجى المحاولة مرة أخرى.", "Please try again."), variant: "destructive" })
+      return
+    }
     router.push("/")
     router.refresh()
   }

@@ -44,8 +44,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { CreateOrderDialog } from "@/components/create-order-dialog"
-import { createPaymentCharge, completeOrder, confirmOrder, verifyPayment } from "@/app/actions/orders"
-import { formatCurrency } from "@/lib/tap"
+import { CancelOrderButton } from "@/components/cancel-order-button"
+import { createPaymentCharge, completeOrder, confirmOrder } from "@/app/actions/orders"
+import { usePaymentReturn } from "@/components/use-payment-return"
+import { formatCurrency } from "@/lib/money"
 import { useToast } from "@/hooks/use-toast"
 import type { RealtimeChannel } from "@supabase/supabase-js"
 
@@ -98,6 +100,8 @@ type Order = {
   created_at: string
   paid_at?: string
   completed_at?: string
+  checkout_started_at?: string | null
+  tap_charge_id?: string | null
 }
 
 type ServiceCard = {
@@ -160,6 +164,7 @@ export default function MessagesPage() {
   const messagesChannelRef = useRef<RealtimeChannel | null>(null)
   const conversationsChannelRef = useRef<RealtimeChannel | null>(null)
   const ordersChannelRef = useRef<RealtimeChannel | null>(null)
+  const verifiedPaymentVersion = usePaymentReturn(searchParams.toString(), !!user)
 
   useEffect(() => {
     const supabase = createClient()
@@ -197,23 +202,10 @@ export default function MessagesPage() {
     }
   }, [searchParams, user])
 
-  // Handle payment callback - verify and update order status when returning from Tap Payment
+  // Refresh the selected order list even if verification finishes after it opens.
   useEffect(() => {
-    const paymentStatus = searchParams.get("payment")
-    const orderId = searchParams.get("order_id")
-
-    if ((paymentStatus === "callback" || paymentStatus === "success") && orderId) {
-      verifyPayment(orderId).then((result) => {
-        if (result.success) {
-          if (selectedConversation) {
-            fetchOrders(selectedConversation)
-          }
-        }
-      })
-      // Clean up URL params
-      router.replace("/messages", { scroll: false })
-    }
-  }, [searchParams])
+    if (verifiedPaymentVersion > 0 && selectedConversation) void fetchOrders(selectedConversation)
+  }, [verifiedPaymentVersion, selectedConversation])
 
   // Setup Realtime subscription for messages when conversation is selected
   useEffect(() => {
@@ -606,7 +598,7 @@ export default function MessagesPage() {
         .in("id", providerIds)
 
       const { data: seekersData } = await supabase
-        .from("profiles")
+        .from("public_profiles")
         .select("id, full_name, avatar_url")
         .in("id", seekerIds)
 
@@ -1212,7 +1204,8 @@ export default function MessagesPage() {
                                       t("في انتظار التأكيد", "Awaiting Confirmation")}
                                   </span>
 
-                                  {/* Seeker buttons */}
+                                  {order.status === "pending" && !order.checkout_started_at && !order.tap_charge_id && <CancelOrderButton orderId={order.id} onCancelled={() => fetchOrders(order.conversation_id)} />}
+                                  {order.status === "pending" && (order.checkout_started_at || order.tap_charge_id) && <span className="text-xs text-muted-foreground">{t("بدأ الدفع؛ تحقق من نتيجته قبل الإلغاء.", "Checkout started; verify its outcome before cancellation.")}</span>}
                                   {/* Seeker buttons */}
                                   {order.seeker_id === user.id && (
                                     <div className="flex gap-2">

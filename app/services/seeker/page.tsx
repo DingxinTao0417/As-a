@@ -47,6 +47,8 @@ export default function TaskSeekerPage() {
   const [sortBy, setSortBy] = useState("newest")
   const [services, setServices] = useState<ServiceWithProvider[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const [loadAttempt, setLoadAttempt] = useState(0)
   const [user, setUser] = useState<any>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const PAGE_SIZE = 12
@@ -64,11 +66,18 @@ export default function TaskSeekerPage() {
   ]
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    setSearchQuery(params.get("q") || "")
+    if (params.get("category")) setSelectedCategory(params.get("category")!)
+  }, [])
+
+  useEffect(() => {
     async function fetchServices() {
-      const supabase = createClient()
       setIsLoading(true)
+      setLoadError(false)
 
       try {
+        const supabase = createClient()
         const { data, error } = await supabase
           .from("services")
           .select(`
@@ -86,20 +95,18 @@ export default function TaskSeekerPage() {
           .eq("is_active", true)
           .order("created_at", { ascending: false })
 
-        if (error) {
-          return
-        }
+        if (error) throw error
 
         setServices((data as ServiceWithProvider[]) || [])
       } catch {
-        // ignored
+        setLoadError(true)
       } finally {
         setIsLoading(false)
       }
     }
 
     fetchServices()
-  }, [])
+  }, [loadAttempt])
 
   useEffect(() => {
     async function checkUser() {
@@ -128,16 +135,17 @@ export default function TaskSeekerPage() {
         if (sortBy === "rating") return (b.providers?.rating || 0) - (a.providers?.rating || 0)
         return 0
       })
-    setCurrentPage(1)
     return result
   }, [services, selectedCategory, searchQuery, sortBy, language])
+
+  useEffect(() => { setCurrentPage(1) }, [selectedCategory, searchQuery, sortBy, language])
 
   const totalPages = Math.max(1, Math.ceil(filteredServices.length / PAGE_SIZE))
   const paginatedServices = filteredServices.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
 
   const handleContactProvider = async (providerId: string) => {
     if (!user) {
-      router.push("/auth/login")
+      router.push(`/auth/login?next=${encodeURIComponent(`/messages?provider=${providerId}`)}`)
       return
     }
     router.push(`/messages?provider=${providerId}`)
@@ -162,6 +170,7 @@ export default function TaskSeekerPage() {
       <Header />
 
       <main className="flex-1">
+        {loadError && <div role="alert" className="container mx-auto p-6 text-center space-y-3"><p>{t("تعذر تحميل الخدمات. تحقق من اتصالك وأعد المحاولة.", "Unable to load services. Check your connection and try again.")}</p><Button onClick={() => setLoadAttempt((attempt) => attempt + 1)}>{t("إعادة المحاولة", "Try again")}</Button></div>}
         {/* Hero Section with Search */}
         <section className="bg-gradient-to-b from-secondary/10 to-background py-12 md:py-20">
           <div className="container mx-auto px-4">
@@ -410,7 +419,7 @@ export default function TaskSeekerPage() {
                   </div>
                 )}
 
-                {filteredServices.length === 0 && (
+                {!loadError && filteredServices.length === 0 && (
                   <div className="text-center py-20">
                     <Filter className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
                     <h3 className="text-xl font-semibold mb-2">{t("لا توجد نتائج", "No results found")}</h3>

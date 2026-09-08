@@ -10,7 +10,7 @@ import { Label } from "./ui/label"
 import { Textarea } from "./ui/textarea"
 import { CircleDollarSign, X } from "lucide-react"
 import { createOrder } from "@/app/actions/orders"
-import { calculateFeesWithVAT, formatCurrency, PLATFORM_FEE_PERCENTAGE, VAT_RATE } from "@/lib/tap"
+import { calculateFees, formatCurrency, PLATFORM_FEE_PERCENTAGE, MAX_SAR_AMOUNT, toSARMinorUnits } from "@/lib/money"
 
 interface CreateOrderDialogProps {
   conversationId: string
@@ -30,8 +30,6 @@ interface CreateOrderDialogProps {
 
 export function CreateOrderDialog({
   conversationId,
-  seekerId,
-  providerId,
   serviceId,
   prefill,
   onClose,
@@ -61,14 +59,15 @@ export function CreateOrderDialog({
     }
   }, [prefill])
 
-  const amount = Math.round(Number.parseFloat(formData.amount || "0") * 100) / 100
-  const fees = calculateFeesWithVAT(amount)
+  const amount = Number(formData.amount || "0")
+  const fees = calculateFees(Number.isFinite(amount) ? amount : 0)
 
-  const isValidAmount = Number.parseFloat(formData.amount || "0") >= 1 // Minimum 1.00 SAR
-  const canSubmit = isValidAmount && formData.serviceNameAr && formData.serviceNameEn && !loading
+  const isValidAmount = amount >= 1 && toSARMinorUnits(amount) !== null
+  const canSubmit = isValidAmount && formData.serviceNameAr.trim() && formData.serviceNameEn.trim() && !loading
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (loading) return
     setError("")
 
     if (!isValidAmount) {
@@ -190,6 +189,7 @@ export function CreateOrderDialog({
                   required
                   type="number"
                   min="1"
+                  max={MAX_SAR_AMOUNT}
                   step="0.01"
                   value={formData.amount}
                   onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
@@ -207,16 +207,8 @@ export function CreateOrderDialog({
             {amount > 0 && (
               <div className="bg-muted p-4 rounded-lg space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span>{language === "ar" ? "المبلغ الأساسي:" : "Base Amount:"}</span>
-                  <span className="font-semibold">{formatCurrency(fees.baseAmount)}</span>
-                </div>
-                <div className="flex justify-between text-muted-foreground">
-                  <span>{language === "ar" ? `ضريبة القيمة المضافة (${VAT_RATE * 100}%):` : `VAT (${VAT_RATE * 100}%):`}</span>
-                  <span>{formatCurrency(fees.vatAmount)}</span>
-                </div>
-                <div className="flex justify-between font-semibold pt-2 border-t">
-                  <span>{language === "ar" ? "الإجمالي شامل الضريبة:" : "Total incl. VAT:"}</span>
-                  <span className="text-primary">{formatCurrency(fees.totalAmount)}</span>
+                  <span>{language === "ar" ? "إجمالي المبلغ المستحق على العميل:" : "Total charged to customer:"}</span>
+                  <span className="font-semibold">{formatCurrency(fees.amount)}</span>
                 </div>
                 <div className="flex justify-between text-muted-foreground">
                   <span>
@@ -233,7 +225,7 @@ export function CreateOrderDialog({
               </div>
             )}
 
-            {error && <div className="bg-destructive/10 text-destructive p-3 rounded-lg text-sm">{error}</div>}
+            {error && <div role="alert" className="bg-destructive/10 text-destructive p-3 rounded-lg text-sm">{error}</div>}
 
             <div className="flex gap-3 pt-4">
               <Button type="button" variant="outline" onClick={handleCancelClick} className="flex-1 bg-transparent">

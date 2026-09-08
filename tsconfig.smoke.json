@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": ".next-smoke/cache/tsconfig.tsbuildinfo"
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next-smoke/types/**/*.ts"],
+  "exclude": ["node_modules", ".next", ".next-smoke/standalone"]
+}

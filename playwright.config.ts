@@ -1,5 +1,8 @@
 import { defineConfig, devices } from "@playwright/test"
 
+const port = 3107
+const baseURL = `http://127.0.0.1:${port}`
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
@@ -8,15 +11,16 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: "html",
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL,
     trace: "on-first-retry",
   },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
   ],
   webServer: {
-    command: "npm run dev",
-    url: "http://localhost:3000",
-    reuseExistingServer: !process.env.CI,
+    command: "node scripts/smoke.mjs serve",
+    url: `${baseURL}/api/health`,
+    reuseExistingServer: false,
+    timeout: 60_000,
   },
 })

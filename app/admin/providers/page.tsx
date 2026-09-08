@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Search, Star, ExternalLink } from "lucide-react"
+import { verifyProvider } from "@/app/actions/admin"
 
 type ProviderRow = {
   id: string
@@ -48,15 +49,20 @@ export default function AdminProvidersPage() {
   const [search, setSearch] = useState("")
   const [detail, setDetail] = useState<ProviderRow | null>(null)
   const [toggling, setToggling] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   async function fetchProviders() {
+    try {
     const supabase = createClient()
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("providers")
       .select("*")
       .order("created_at", { ascending: false })
+    if (error) throw error
     setProviders((data as ProviderRow[]) || [])
-    setLoading(false)
+    } catch {
+      setError("Unable to load providers. Please refresh and try again.")
+    } finally { setLoading(false) }
   }
 
   useEffect(() => { fetchProviders() }, [])
@@ -70,16 +76,21 @@ export default function AdminProvidersPage() {
   })
 
   const handleToggleVerify = async (provider: ProviderRow) => {
+    if (toggling) return
     setToggling(provider.id)
-    const supabase = createClient()
-    await supabase.from("providers").update({ is_verified: !provider.is_verified }).eq("id", provider.id)
+    setError(null)
+    try {
+    const result = await verifyProvider(provider.id, !provider.is_verified)
+    if (!result.success) throw new Error(result.error)
     setProviders((prev) =>
       prev.map((p) => p.id === provider.id ? { ...p, is_verified: !p.is_verified } : p)
     )
     if (detail?.id === provider.id) {
       setDetail((d) => d ? { ...d, is_verified: !d.is_verified } : null)
     }
-    setToggling(null)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to update provider.")
+    } finally { setToggling(null) }
   }
 
   const filterLabels: Record<Filter, [string, string]> = {
@@ -106,6 +117,7 @@ export default function AdminProvidersPage() {
 
   return (
     <div className="space-y-6">
+      {error && <p role="alert" className="rounded-md border border-destructive p-3 text-sm text-destructive">{error}</p>}
       <div>
         <h1 className="text-2xl font-bold">{t("توثيق مقدمي الخدمة", "Provider Verification")}</h1>
         <p className="text-muted-foreground mt-1">

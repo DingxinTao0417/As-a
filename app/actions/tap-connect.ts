@@ -1,40 +1,33 @@
 "use server"
 
 import { requireProvider, AuthError } from "@/lib/auth"
-import { fail, ok } from "@/lib/action-result"
-import { createTransfer } from "@/lib/tap"
+import { fail, ok, type ActionResult } from "@/lib/action-result"
+import { toSARMinorUnits } from "@/lib/money"
+import { createAdminClient } from "@/lib/supabase/admin"
 
-export async function createConnectAccount() {
+function hasVerifiedAccount(provider: { tap_destination_id?: string | null; tap_onboarding_completed?: boolean; tap_account_status?: string | null }) {
+  return Boolean(provider.tap_destination_id && !provider.tap_destination_id.startsWith("tap_placeholder_") &&
+    provider.tap_onboarding_completed && provider.tap_account_status === "active")
+}
+
+export async function createConnectAccount(): Promise<ActionResult<{ accountId: string; destinationId: string }>> {
   try {
-    const { supabase, provider } = await requireProvider()
-    const destinationId = provider.tap_destination_id || `tap_placeholder_${provider.id}`
-
-    const { error } = await supabase
-      .from("providers")
-      .update({
-        tap_destination_id: destinationId,
-        tap_account_status: "placeholder",
-        tap_onboarding_completed: false,
-      })
-      .eq("id", provider.id)
-
-    if (error) return fail("Failed to initialize payment account")
-    return ok({ accountId: destinationId, destinationId })
+    const { provider } = await requireProvider()
+    if (hasVerifiedAccount(provider)) {
+      return ok({ accountId: provider.tap_destination_id, destinationId: provider.tap_destination_id })
+    }
+    // Tap marketplace onboarding requires merchant approval/KYC. Never fabricate an account.
+    return fail("Payment account setup requires support verification. Please contact support to complete onboarding.")
   } catch (error) {
     if (error instanceof AuthError) return fail(error.message)
     return fail("Failed to initialize payment account")
   }
 }
 
-export async function createAccountLink() {
+export async function createAccountLink(): Promise<ActionResult<{ url: string }>> {
   try {
-    const { provider } = await requireProvider()
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL
-    if (!baseUrl?.startsWith("http")) return fail("Site URL is not configured")
-
-    return ok({
-      url: `${baseUrl}/dashboard?tap_onboarding=placeholder&provider=${provider.id}`,
-    })
+    await requireProvider()
+    return fail("Online payment account setup is not available. Please contact support to complete onboarding.")
   } catch (error) {
     if (error instanceof AuthError) return fail(error.message)
     return fail("Failed to create payment setup link")
@@ -44,7 +37,7 @@ export async function createAccountLink() {
 export async function checkAccountStatus() {
   try {
     const { provider } = await requireProvider()
-    const isComplete = Boolean(provider.tap_destination_id && provider.tap_onboarding_completed)
+    const isComplete = hasVerifiedAccount(provider)
     return ok({ isComplete, chargesEnabled: isComplete, payoutsEnabled: isComplete })
   } catch (error) {
     if (error instanceof AuthError) return fail(error.message)
@@ -54,44 +47,19 @@ export async function checkAccountStatus() {
 
 export async function createPayout(amount: number) {
   try {
-    const { supabase, provider } = await requireProvider()
-
-    if (!provider.tap_destination_id) return fail("Please complete payment setup first")
-    if (amount <= 0) return fail("Invalid amount")
-
-    const { data: completedOrders } = await supabase
-      .from("orders")
-      .select("provider_amount")
-      .eq("provider_id", provider.id)
-      .eq("status", "completed")
-
-    const totalEarned = (completedOrders || []).reduce((sum, order) => sum + Number(order.provider_amount || 0), 0)
-
-    const { data: completedWithdrawals } = await supabase
-      .from("withdrawal_requests")
-      .select("amount")
-      .eq("provider_id", provider.id)
-      .in("status", ["approved", "completed"])
-
-    const totalWithdrawn =
-      (completedWithdrawals || []).reduce((sum, withdrawal) => sum + Number(withdrawal.amount || 0), 0)
-    const availableBalance = totalEarned - totalWithdrawn
-
-    if (amount > availableBalance) return fail(`Insufficient balance. Available: ${availableBalance.toFixed(2)} SAR`)
-
-    const transfer = await createTransfer({ amount, destinationId: provider.tap_destination_id })
-
-    await supabase.from("withdrawal_requests").insert({
-      provider_id: provider.id,
-      amount: Math.round(amount * 100) / 100,
-      status: "completed",
-      tap_transfer_id: transfer.id,
-      processed_at: new Date().toISOString(),
+    const { user, provider } = await requireProvider()
+    if (!hasVerifiedAccount(provider)) return fail("Please complete payment account verification with support first")
+    const minor = toSARMinorUnits(amount)
+    if (minor === null || minor < 100) return fail("Enter at least 1.00 SAR with at most two decimal places")
+    // Reserve funds atomically. Actual settlement is an audited manual operation until
+    // Tap marketplace transfers, asynchronous statuses and reconciliation are integrated.
+    const { data: requestId, error } = await createAdminClient().rpc("request_provider_withdrawal", {
+      p_provider_id: provider.id, p_actor_id: user.id, p_amount: minor / 100,
     })
-
-    return ok({ transferId: transfer.id })
+    if (error || !requestId) return fail("Unable to request withdrawal. Check your available balance and pending requests.")
+    return ok({ requestId: requestId as string, status: "pending" as const })
   } catch (error) {
     if (error instanceof AuthError) return fail(error.message)
-    return fail("Failed to create payout")
+    return fail("Failed to request payout")
   }
 }

@@ -203,14 +203,17 @@ export default function ServiceDetailPage() {
       const { data: reviewsData } = await supabase
         .from("reviews")
         .select(`
-          id, rating, comment, created_at, service_name, reviewer_id,
-          profiles ( full_name, avatar_url )
+          id, rating, comment, created_at, service_name, reviewer_id
         `)
         .eq("service_id", data.id)
         .order("created_at", { ascending: false })
         .limit(10)
 
-      setReviews((reviewsData as Review[]) || [])
+      const reviewerIds = [...new Set((reviewsData || []).map((review) => review.reviewer_id))]
+      const { data: reviewerProfiles } = reviewerIds.length
+        ? await supabase.from("public_profiles").select("id, full_name, avatar_url").in("id", reviewerIds)
+        : { data: [] }
+      setReviews((reviewsData || []).map((review) => ({ ...review, profiles: reviewerProfiles?.find((profile) => profile.id === review.reviewer_id) || null })) as Review[])
 
       setIsLoading(false)
     }

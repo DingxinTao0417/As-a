@@ -47,6 +47,7 @@ import {
 } from "lucide-react"
 
 import { useToast } from "@/hooks/use-toast"
+import { CancelOrderButton } from "@/components/cancel-order-button"
 
 export interface Order {
   id: string
@@ -63,6 +64,8 @@ export interface Order {
   paid_at: string | null
   completed_at: string | null
   cancelled_at: string | null
+  checkout_started_at?: string | null
+  tap_charge_id?: string | null
   seeker_id: string
   seeker: {
     full_name: string
@@ -581,6 +584,8 @@ export function OrdersTable({ orders: rawOrders, onOrderUpdate }: { orders: Orde
                               </Button>
                             </span>
                           )}
+                          {waitingForPayment && !order.checkout_started_at && !order.tap_charge_id && <CancelOrderButton orderId={order.id} onCancelled={async () => { setSelectedOrder(null); await onOrderUpdate?.() }} />}
+                          {waitingForPayment && (order.checkout_started_at || order.tap_charge_id) && <span className="text-xs text-muted-foreground">{t("بدأ الدفع؛ يلزم التحقق أولاً.", "Checkout started; verification required.")}</span>}
                         </div>
                       </div>
                     </CardContent>

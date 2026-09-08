@@ -30,6 +30,7 @@ export default function DashboardPage() {
   const { toast } = useToast()
   const [loading, setLoading] = useState(true)
   const [accessDenied, setAccessDenied] = useState(false)
+  const [loadError, setLoadError] = useState(false)
   const [orders, setOrders] = useState<Order[]>([])
   const [withdrawing, setWithdrawing] = useState(false)
   const [tapConnected, setTapConnected] = useState(false)
@@ -45,6 +46,8 @@ export default function DashboardPage() {
   })
 
   const fetchData = async () => {
+    setLoadError(false)
+    try {
       const supabase = createClient()
       const {
         data: { user },
@@ -84,16 +87,14 @@ export default function DashboardPage() {
       const provider = providers[0]
 
       setTapDestinationId(provider.tap_destination_id)
-      setTapConnected(!!provider.tap_onboarding_completed)
+      setTapConnected(false)
 
       if (provider.tap_destination_id) {
         const statusResult = await checkAccountStatus()
-        if (statusResult.success && statusResult.data.isComplete) {
-          setTapConnected(true)
-        }
+        setTapConnected(statusResult.success && statusResult.data.isComplete)
       }
 
-      const { data: ordersData } = await supabase
+      const { data: ordersData, error: ordersError } = await supabase
         .from("orders")
         .select(`
           id,
@@ -110,15 +111,18 @@ export default function DashboardPage() {
           paid_at,
           completed_at,
           cancelled_at,
+          checkout_started_at,
+          tap_charge_id,
           seeker_id
         `)
         .eq("provider_id", provider.id)
         .order("created_at", { ascending: false })
+      if (ordersError) throw ordersError
 
       if (ordersData) {        const typedOrders = ordersData as Array<Record<string, any>>
         const seekerIds = [...new Set(typedOrders.map((order) => order.seeker_id).filter(Boolean))]
         const { data: seekers } = seekerIds.length > 0
-          ? await supabase.from("profiles").select("id, full_name, email").in("id", seekerIds)
+          ? await supabase.from("public_profiles").select("id, full_name").in("id", seekerIds)
           : { data: [] }
         const seekerMap = new Map((seekers || []).map((seeker: any) => [seeker.id, seeker]))
 
@@ -126,7 +130,7 @@ export default function DashboardPage() {
           ...order,
           seeker: seekerMap.get(order.seeker_id) || {
             full_name: "Unknown",
-            email: "unknown@example.com",
+            email: "",
           },
         })) as Order[]
 
@@ -142,13 +146,14 @@ export default function DashboardPage() {
             .reduce((sum, o) => sum + Number(o.provider_amount || 0), 0)
         const pendingEarnings =
           ordersWithSeeker
-            .filter((o) => o.status !== "completed" && o.status !== "cancelled")
+            .filter((o) => o.status === "paid" || o.status === "awaiting_confirmation")
             .reduce((sum, o) => sum + Number(o.provider_amount || 0), 0)
-        const { data: withdrawals } = await supabase
+        const { data: withdrawals, error: withdrawalError } = await supabase
           .from("withdrawal_requests")
           .select("amount")
           .eq("provider_id", provider.id)
-          .in("status", ["approved", "completed"])
+          .in("status", ["pending", "approved", "completed"])
+        if (withdrawalError) throw withdrawalError
         const totalWithdrawn = (withdrawals || []).reduce((sum: number, withdrawal: any) => sum + Number(withdrawal.amount || 0), 0)
 
         setStats({
@@ -161,7 +166,10 @@ export default function DashboardPage() {
 
       }
 
-      setLoading(false)
+    } catch {
+      setLoadError(true)
+      setTapConnected(false)
+    } finally { setLoading(false) }
   }
 
   useEffect(() => {
@@ -212,18 +220,20 @@ export default function DashboardPage() {
   }
 
   const executeWithdraw = async () => {
+    if (withdrawing) return
     setShowWithdrawDialog(false)
     const availableBalance = stats.totalEarned - stats.totalWithdrawn
     setWithdrawing(true)
 
+    try {
     const result = await createPayout(availableBalance)
 
     if (result.success) {
       toast({
         title: t("تم بنجاح", "Success"),
         description: t(
-          "تم إرسال طلب السحب بنجاح! سيتم معالجته خلال 1-3 أيام عمل",
-          "Withdrawal request submitted! It will be processed within 1-3 business days",
+          "تم إرسال طلب السحب وحجز المبلغ لحين المراجعة.",
+          "Withdrawal request submitted. The amount is reserved while it is reviewed.",
         ),
       })
       await fetchData()
@@ -231,7 +241,13 @@ export default function DashboardPage() {
       toast({ title: t("خطأ", "Error"), description: result.error, variant: "destructive" })
     }
 
-    setWithdrawing(false)
+    } catch {
+      toast({ title: t("خطأ", "Error"), description: t("تعذر إرسال طلب السحب. يرجى المحاولة مجدداً.", "Unable to request a withdrawal. Please try again."), variant: "destructive" })
+    } finally { setWithdrawing(false) }
+  }
+
+  if (loadError) {
+    return <div className="min-h-screen flex flex-col"><Header /><main className="flex-1 flex flex-col items-center justify-center gap-4 p-6"><p role="alert">{t("تعذر تحميل لوحة التحكم. أعد المحاولة.", "Unable to load your dashboard. Please try again.")}</p><Button onClick={() => { setLoading(true); void fetchData() }}>{t("إعادة المحاولة", "Try again")}</Button></main><Footer /></div>
   }
 
   if (loading) {

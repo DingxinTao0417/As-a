@@ -63,12 +63,6 @@ export function Footer() {
           </div>
         </div>
 
-        <div className="border-t border-secondary-foreground/20 pt-4 mt-8 text-xs text-muted-foreground text-center space-y-1">
-          <p>{t("سجل تجاري رقم:", "CR No:")} XXXXXXXXXX</p>
-          <p>{t("الرقم الضريبي:", "VAT No:")} 3XXXXXXXXXXXXXXX</p>
-          <p>{t("البريد الإلكتروني:", "Email:")} support@asa.sa</p>
-        </div>
-
         <div className="mt-12 pt-8 border-t border-secondary-foreground/20 text-center text-sm opacity-75">
           <p>© {new Date().getFullYear()} {t("أسعى. جميع الحقوق محفوظة", "As'aa. All rights reserved")}</p>
         </div>

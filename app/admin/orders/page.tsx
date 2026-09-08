@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Search, DollarSign, ShieldAlert } from "lucide-react"
+import { setUserAdmin } from "@/app/actions/admin"
 
 type OrderRow = {
   id: string
@@ -49,9 +50,11 @@ export default function AdminOrdersPage() {
   const [orderSearch, setOrderSearch] = useState("")
   const [userSearch, setUserSearch] = useState("")
   const [togglingAdmin, setTogglingAdmin] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function fetchOrders() {
+      try {
       const supabase = createClient()
       const { data, error } = await supabase
         .from("orders")
@@ -62,19 +65,23 @@ export default function AdminOrdersPage() {
         `)
         .order("created_at", { ascending: false })
         .limit(200)
-      if (error) console.error("[admin] orders fetch error:", error)
+      if (error) throw error
       setOrders((data as unknown as OrderRow[]) || [])
-      setOrdersLoading(false)
+      } catch { setError("Unable to load orders. Please refresh and try again.") }
+      finally { setOrdersLoading(false) }
     }
 
     async function fetchUsers() {
+      try {
       const supabase = createClient()
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("profiles")
         .select("id, email, full_name, role, is_admin, created_at")
         .order("created_at", { ascending: false })
+      if (error) throw error
       setUsers((data as UserRow[]) || [])
-      setUsersLoading(false)
+      } catch { setError("Unable to load users. Please refresh and try again.") }
+      finally { setUsersLoading(false) }
     }
 
     fetchOrders()
@@ -100,17 +107,22 @@ export default function AdminOrdersPage() {
   })
 
   const handleToggleAdmin = async (user: UserRow) => {
+    if (togglingAdmin) return
     setTogglingAdmin(user.id)
-    const supabase = createClient()
-    await supabase.from("profiles").update({ is_admin: !user.is_admin }).eq("id", user.id)
+    setError(null)
+    try {
+    const result = await setUserAdmin(user.id, !user.is_admin)
+    if (!result.success) throw new Error(result.error)
     setUsers((prev) =>
       prev.map((u) => u.id === user.id ? { ...u, is_admin: !u.is_admin } : u)
     )
-    setTogglingAdmin(null)
+    } catch (error) { setError(error instanceof Error ? error.message : "Unable to update administrator access.") }
+    finally { setTogglingAdmin(null) }
   }
 
   return (
     <div className="space-y-6">
+      {error && <p role="alert" className="rounded-md border border-destructive p-3 text-sm text-destructive">{error}</p>}
       <div>
         <h1 className="text-2xl font-bold">{t("الطلبات والمستخدمون", "Orders & Users")}</h1>
         <p className="text-muted-foreground mt-1">

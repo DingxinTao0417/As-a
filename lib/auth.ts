@@ -21,6 +21,32 @@ export async function requireAuth() {
     throw new AuthError("Not logged in", "UNAUTHENTICATED")
   }
 
+  // Auth sessions remain valid after soft deletion; always check account state.
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("deletion_requested_at")
+    .eq("id", user.id)
+    .maybeSingle()
+  if (profileError || !profile) {
+    throw new AuthError("Account is unavailable", "ACCOUNT_UNAVAILABLE")
+  }
+  if (profile.deletion_requested_at) {
+    throw new AuthError("Account deletion has been requested", "ACCOUNT_DISABLED")
+  }
+
+  return { user, supabase }
+}
+
+export async function requireAdmin() {
+  const { user, supabase } = await requireAuth()
+  const { data: profile, error } = await supabase
+    .from("profiles")
+    .select("is_admin")
+    .eq("id", user.id)
+    .maybeSingle()
+  if (error || profile?.is_admin !== true) {
+    throw new AuthError("Administrator access required", "ADMIN_REQUIRED")
+  }
   return { user, supabase }
 }
 

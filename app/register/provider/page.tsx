@@ -253,18 +253,12 @@ export default function BecomeProviderPage() {
       }
 
 
-      // Update user's profile role to "provider"
-      await supabase
-        .from("profiles")
-        .update({ role: "provider" })
-        .eq("id", user.id)
-
       toast({
         title: t("تم بنجاح!", "Success!"),
         description: t("تم إنشاء ملفك كمقدم خدمة بنجاح", "Your provider profile has been created successfully"),
       })
 
-      router.push("/services/seeker")
+      router.push("/dashboard")
     } catch (error: any) {
       toast({
         title: t("حدث خطأ", "Error"),

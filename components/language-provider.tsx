@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useState, useEffect } from "react"
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react"
 
 type Language = "ar" | "en"
 
@@ -16,29 +16,39 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguage] = useState<Language>("ar")
+  const [restored, setRestored] = useState(false)
 
   useEffect(() => {
-    const savedLanguage = localStorage.getItem("language") as Language | null
-    if (savedLanguage) {
-      setLanguage(savedLanguage)
+    try {
+      const savedLanguage = window.localStorage.getItem("language")
+      if (savedLanguage === "ar" || savedLanguage === "en") setLanguage(savedLanguage)
+    } catch {
+      // Storage may be disabled by browser privacy settings.
     }
+    setRestored(true)
   }, [])
 
   useEffect(() => {
-    localStorage.setItem("language", language)
+    if (!restored) return
+    try {
+      window.localStorage.setItem("language", language)
+    } catch {
+      // Language switching still works when persistent storage is unavailable.
+    }
 
     const html = document.documentElement
     html.lang = language
     html.dir = language === "ar" ? "rtl" : "ltr"
-  }, [language])
+  }, [language, restored])
 
-  const t = (ar: string, en: string) => {
+  const t = useCallback((ar: string, en: string) => {
     return language === "ar" ? ar : en
-  }
+  }, [language])
 
   const isRTL = language === "ar"
 
-  return <LanguageContext.Provider value={{ language, setLanguage, t, isRTL }}>{children}</LanguageContext.Provider>
+  const value = useMemo(() => ({ language, setLanguage, t, isRTL }), [language, t, isRTL])
+  return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>
 }
 
 export function useLanguage() {

@@ -12,9 +12,10 @@ export default function TermsPage() {
       <Header />
       <main className="container mx-auto max-w-4xl px-4 py-12 flex-1 space-y-10" dir="rtl">
         <section className="space-y-4">
-          <p className="text-sm text-muted-foreground">آخر تحديث: 2026-04-24</p>
+          <p className="text-sm text-muted-foreground">آخر تحديث: 2026-09-07</p>
           <h1 className="text-3xl font-bold">شروط الاستخدام</h1>
           <p className="text-muted-foreground leading-8">تنظم هذه الشروط استخدام منصة أسعى. باستخدامك للمنصة فإنك توافق على هذه الشروط وسياسة الخصوصية.</p>
+          <p className="text-sm text-muted-foreground">هذه مسودة للمراجعة قبل الإطلاق العام. يجب استكمال بيانات الجهة المشغلة ووسيلة التواصل الرسمية واعتماد الشروط النهائية.</p>
         </section>
 
         <section className="space-y-3">
@@ -37,8 +38,8 @@ export default function TermsPage() {
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-xl font-semibold">الدفع والرسوم والضريبة</h2>
-          <p className="leading-8">تعرض الأسعار بالريال السعودي حيثما أمكن. قد تخصم المنصة رسماً قدره 15% من قيمة الخدمة قبل أي ضرائب مطبقة. قد تضاف ضريبة القيمة المضافة بنسبة 15% أو حسب النظام. تخضع المبالغ المستردة للسياسة المعروضة في الطلب، حالة التنفيذ، ومتطلبات مزود الدفع.</p>
+          <h2 className="text-xl font-semibold">الدفع والرسوم</h2>
+          <p className="leading-8">تعرض الأسعار بالريال السعودي. يظهر إجمالي مبلغ الطلب للعميل، وتُخصم رسوم المنصة من هذا المبلغ ويظهر صافي مستحق مقدم الخدمة عند إنشاء عرض السعر. راجع تفاصيل العرض قبل الدفع. لمناقشة تنفيذ الطلب، استخدم المحادثة المرتبطة به.</p>
         </section>
 
         <section className="space-y-3">
@@ -59,7 +60,7 @@ export default function TermsPage() {
 
         <section className="space-y-4 border-t pt-8" dir="ltr">
           <h2 className="text-2xl font-bold">Terms Summary</h2>
-          <p className="leading-7">As'aa is an intermediary marketplace, not the direct provider of listed services. Users must be legally eligible, provide accurate information, comply with Saudi law, pay applicable fees and VAT, respect intellectual property, and resolve disputes under Saudi law. Accounts may be suspended or terminated for violations, fraud, or legal requirements.</p>
+          <p className="leading-7">This is a draft for review before public launch. As'aa connects clients with independent service providers. Quotes show the order total and provider earnings after the platform fee. Review the quote before paying and use the order conversation to discuss delivery. Final terms, the operator's legal identity, and official contact details must be approved before public launch.</p>
         </section>
       </main>
       <Footer />

@@ -4,6 +4,8 @@ import { useState, useRef, useEffect } from "react"
 import { MessageCircle, X } from "lucide-react"
 import { useLanguage } from "./language-provider"
 import { Input } from "./ui/input"
+import Link from "next/link"
+import { ChatRequestError, chatErrorText, sendChat } from "@/lib/chat-client"
 
 type ChatMessage = { id: string; role: "user" | "assistant"; content: string }
 
@@ -12,6 +14,7 @@ export function GlobalCustomerService() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [errorStatus, setErrorStatus] = useState<number | null>(null)
   const { language, t } = useLanguage()
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -29,25 +32,15 @@ export function GlobalCustomerService() {
     setMessages(nextMessages)
     setInput("")
     setIsLoading(true)
+    setErrorStatus(null)
 
     try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: nextMessages }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || "Chat request failed")
-      setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: data.message }])
-    } catch {
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: t("عذراً، خدمة الدردشة غير متاحة حالياً.", "Sorry, chat is unavailable right now."),
-        },
-      ])
+      const message = await sendChat(nextMessages)
+      setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content: message }])
+    } catch (error) {
+      setErrorStatus(error instanceof ChatRequestError ? error.status : 503)
+      setMessages(messages)
+      setInput(content)
     } finally {
       setIsLoading(false)
     }
@@ -64,10 +57,11 @@ export function GlobalCustomerService() {
       </button>
 
       {isOpen && (
-        <div className="fixed bottom-24 right-6 z-40 w-[calc(100vw-3rem)] max-w-[380px] h-[500px] bg-background border rounded-xl shadow-xl flex flex-col overflow-hidden">
+        <div className="fixed bottom-24 right-6 z-40 w-[calc(100vw-3rem)] max-w-[380px] h-[min(500px,calc(100dvh-8rem))] bg-background border rounded-xl shadow-xl flex flex-col overflow-hidden">
           <div className="p-4 border-b bg-primary text-primary-foreground">
-            <h3 className="font-semibold">{t("مساعد أسعى", "As'a Assistant")}</h3>
-            <p className="text-xs opacity-80">{t("كيف يمكنني مساعدتك؟", "How can I help you?")}</p>
+            <h3 className="font-semibold">{t("مساعد أسعى الذكي", "As'a AI Assistant")}</h3>
+            <p className="text-xs opacity-80">{t("معلومات عامة عن المنصة؛ لا يمكنه تعديل طلباتك.", "General platform guidance; it cannot change your orders.")}</p>
+            <Link href="/messages" className="text-xs underline">{t("ناقش طلبك مع مقدم الخدمة", "Discuss your order with your provider")}</Link>
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -97,8 +91,14 @@ export function GlobalCustomerService() {
             <div ref={messagesEndRef} />
           </div>
 
+          {errorStatus !== null && <div role="alert" className="px-4 py-2 text-sm text-destructive">
+            {chatErrorText(errorStatus, language)}
+            {errorStatus === 401 && <Link href="/auth/login" className="ms-2 underline">{t("تسجيل الدخول", "Sign in")}</Link>}
+          </div>}
           <form onSubmit={handleSubmit} className="p-3 border-t flex gap-2">
             <Input
+              maxLength={4000}
+              disabled={isLoading}
               value={input}
               onChange={(event) => setInput(event.target.value)}
               placeholder={t("اكتب رسالتك...", "Type your message...")}
