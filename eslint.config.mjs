@@ -6,6 +6,7 @@ export default [
     ignores: [
       ".next/**",
       ".next-smoke/**",
+      ".validation/**",
       "node_modules/**",
       "coverage/**",
       "playwright-report/**",

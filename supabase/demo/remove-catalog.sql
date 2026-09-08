@@ -213,6 +213,7 @@ BEGIN
       WHERE t.row_id::text IN (to_jsonb(object)->>'owner_id',to_jsonb(object)->>'owner')
         OR t.row_id::text=split_part(object.name,'/',1)
     )
+      OR object.name LIKE 'asaa-showcase-v1/%'
   ) THEN RAISE EXCEPTION 'Storage objects belong to or reference the demo catalog; nothing deleted'; END IF;
 
   IF to_regclass('public.admin_audit_log') IS NOT NULL THEN

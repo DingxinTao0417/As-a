@@ -7,6 +7,7 @@ import { PGlite } from '@electric-sql/pglite'
 
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url))
 const catalogPath = path.join(projectRoot, 'supabase/demo/catalog.sql')
+const assetsPath = path.join(projectRoot, 'supabase/demo/assets.sql')
 const cleanupPath = path.join(projectRoot, 'supabase/demo/remove-catalog.sql')
 const migrationsPath = path.join(projectRoot, 'supabase/migrations')
 const db = new PGlite()
@@ -154,6 +155,14 @@ async function verifyCatalog() {
        OR name_ar = '' OR name_en = ''
        OR price < 1 OR price > 1000000
   `, 0)
+  await expectScalar(`
+    SELECT count(*)::int FROM public.providers
+    WHERE avatar_url LIKE 'https://nbhbendahduyiobyewzw.supabase.co/storage/v1/object/public/avatars/asaa-showcase-v1/%.webp'
+  `, 6)
+  await expectScalar(`
+    SELECT count(*)::int FROM public.services
+    WHERE image_urls[1] LIKE 'https://nbhbendahduyiobyewzw.supabase.co/storage/v1/object/public/service-images/asaa-showcase-v1/%.webp'
+  `, 12)
   for (const table of [
     'public.orders', 'public.reviews', 'public.service_history', 'public.withdrawal_requests',
     'public.conversations', 'public.messages', 'public.favorites', 'public.admin_audit_log',
@@ -224,8 +233,20 @@ try {
   }
 
   const catalogSql = await readFile(catalogPath, 'utf8')
+  const assetsSql = await readFile(assetsPath, 'utf8')
   await db.exec(catalogSql)
   await verifyCatalog()
+  await db.exec(`
+    UPDATE public.profiles SET avatar_url='/placeholder.svg';
+    UPDATE public.providers SET avatar_url='/placeholder.svg';
+    UPDATE public.services SET image_urls=ARRAY['/placeholder.svg'];
+  `)
+  await db.exec(assetsSql)
+  await verifyCatalog()
+  const imageLinkedCatalog = await snapshotCatalog()
+  await db.exec(assetsSql)
+  assert.deepEqual(await snapshotCatalog(), imageLinkedCatalog, 'Repeated image linking must not modify catalog rows')
+  assertions++
   const initialCatalog = await snapshotCatalog()
   await db.exec(catalogSql)
   await verifyCatalog()

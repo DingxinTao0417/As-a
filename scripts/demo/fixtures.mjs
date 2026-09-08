@@ -5,11 +5,18 @@
  */
 export const DEMO_DATASET_ID = "asaa-showcase-v1"
 export const DEMO_ANCHOR = "2026-09-07T12:00:00.000Z"
+export const DEMO_ASSET_BASE_URL = "https://nbhbendahduyiobyewzw.supabase.co/storage/v1/object/public"
 
 const id = (kind, index) => `d3a0000${kind}-0000-4000-8000-${String(index).padStart(12, "0")}`
 const markAr = (text) => `${text} — عرض تجريبي`
 const markEn = (text) => `${text} — Demo`
 const message = (ar, en) => `عرض تجريبي • Demo\n${ar}\n${en}`
+const assetUrl = (bucket, objectPath) => `${DEMO_ASSET_BASE_URL}/${bucket}/${objectPath}`
+const serviceAssetNames = [
+  "01-cafe-launch", "02-booking-dashboard", "03-craft-identity", "04-booking-screens",
+  "05-cafe-content-plan", "06-profile-content-review", "07-product-descriptions", "08-arabic-editing",
+  "09-vertical-video", "10-motion-openers", "11-project-scoping", "12-enquiry-process",
+]
 const disclaimerAr = "هذه بيانات عرض خيالية، وليست خدمة متاحة للشراء. الأسعار والمواعيد والتقييمات أمثلة توضيحية؛ لا تمثل أعمالاً أو مؤهلات حقيقية."
 const disclaimerEn = "Fictional showcase data; this service is not available for purchase. Prices, delivery times and reviews are illustrative and do not represent real work or credentials."
 
@@ -193,9 +200,13 @@ export function createDemoFixtures({ anchor = DEMO_ANCHOR, userIds = {} } = {}) 
   const at = (days, hours = 0) => new Date(anchorTime + (days * 24 + hours) * 3_600_000).toISOString()
 
   const profiles = [
-    ...providerSpecs.map((spec) => ({ id: users[spec.key], email: spec.email, full_name: `${spec.name_ar} / ${spec.name_en} — عرض تجريبي / Demo`, role: "provider" })),
+    ...providerSpecs.map((spec) => ({
+      id: users[spec.key], email: spec.email,
+      full_name: `${spec.name_ar} / ${spec.name_en} — عرض تجريبي / Demo`, role: "provider",
+      avatar_url: assetUrl("avatars", `${DEMO_DATASET_ID}/${spec.category}.webp`),
+    })),
     ...seekerSpecs.map((spec) => ({ id: users[spec.key], email: spec.email, full_name: spec.name, role: "seeker" })),
-  ].map((profile) => ({ ...profile, phone: null, avatar_url: "/placeholder.svg", is_admin: false, deletion_requested_at: null, created_at: at(-40), updated_at: at(-30) }))
+  ].map((profile) => ({ ...profile, phone: null, avatar_url: profile.avatar_url ?? "/placeholder.svg", is_admin: false, deletion_requested_at: null, created_at: at(-40), updated_at: at(-30) }))
   const authUsers = profiles.map((profile) => ({
     id: profile.id, email: profile.email, email_confirm: true,
     user_metadata: { full_name: profile.full_name, role: profile.role, demo_dataset: DEMO_DATASET_ID },
@@ -205,23 +216,25 @@ export function createDemoFixtures({ anchor = DEMO_ANCHOR, userIds = {} } = {}) 
     name_ar: markAr(spec.name_ar), name_en: markEn(spec.name_en),
     title_ar: spec.title_ar, title_en: spec.title_en,
     bio_ar: `${disclaimerAr}\n\n${spec.bio_ar}`, bio_en: `${disclaimerEn}\n\n${spec.bio_en}`,
-    avatar_url: "/placeholder.svg", display_name: markEn(spec.name_en), title: spec.title_en,
+    avatar_url: assetUrl("avatars", `${DEMO_DATASET_ID}/${spec.category}.webp`), display_name: markEn(spec.name_en), title: spec.title_en,
     bio: `${disclaimerEn}\n\n${spec.bio_en}`, category: spec.category,
     hourly_rate: spec.hourly_rate, starting_price: Math.min(...spec.services.map((service) => service.price)),
     skills: [...spec.skills], categories: [spec.category], rating: 0, reviews_count: 0, completed_projects: 0,
     is_verified: false, tap_destination_id: null, tap_account_status: "not_connected", tap_onboarding_completed: false,
     created_at: at(-39, index), updated_at: at(-30, index),
   }))
-  const services = providerSpecs.flatMap((spec, providerIndex) => spec.services.map((service, serviceIndex) => ({
-    id: id(3, providerIndex * 2 + serviceIndex + 1), provider_id: providers[providerIndex].id,
+  const services = providerSpecs.flatMap((spec, providerIndex) => spec.services.map((service, serviceIndex) => {
+    const serviceId = id(3, providerIndex * 2 + serviceIndex + 1)
+    const providerId = providers[providerIndex].id
+    return {
+    id: serviceId, provider_id: providerId,
     ...service, name_ar: markAr(service.name_ar), name_en: markEn(service.name_en),
     description_ar: `${disclaimerAr}\n\n${service.description_ar}`,
     description_en: `${disclaimerEn}\n\n${service.description_en}`,
     features: [...service.features], category: spec.category,
-    // A bare local SVG is supported by Next Image; no external hosts or uploads.
-    image_urls: ["/placeholder.svg"], is_active: true,
+    image_urls: [assetUrl("service-images", `${DEMO_DATASET_ID}/${serviceAssetNames[providerIndex * 2 + serviceIndex]}.webp`)], is_active: true,
     created_at: at(-30 + providerIndex, serviceIndex), updated_at: at(-25 + providerIndex, serviceIndex),
-  })))
+  }}))
 
   const conversationSpecs = [
     { seeker: "seekerLaunch", provider: 0, created: -25, pinnedSeeker: true, pinnedProvider: true, archived: false },

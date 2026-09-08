@@ -14,11 +14,12 @@ const payload = fixtures.providers.map((p) => ({
   name_ar: p.name_ar, name_en: p.name_en,
   title_ar: p.title_ar, title_en: p.title_en,
   bio_ar: body(p.bio_ar), bio_en: body(p.bio_en),
-  hourly_rate: p.hourly_rate, skills: p.skills,
+  hourly_rate: p.hourly_rate, skills: p.skills, avatar_url: p.avatar_url,
   services: fixtures.services.filter((s) => s.provider_id === p.id).map((s) => ({
     name_ar: s.name_ar, name_en: s.name_en,
     description_ar: body(s.description_ar), description_en: body(s.description_en),
     price: s.price, price_type: s.price_type, delivery_time: s.delivery_time, features: s.features,
+    image_url: s.image_urls[0],
   })),
 }))
 const literal = (text) => `'${text.replaceAll("'", "''")}'`
@@ -62,7 +63,7 @@ BEGIN
       INSERT INTO public.profiles(id,email,full_name,role,is_admin,avatar_url,created_at,updated_at)
       VALUES(account_id,p->>'email',(p->>'name_ar')||' / '||(p->>'name_en'),'provider',false,'/placeholder.svg',anchor,anchor)
       ON CONFLICT (id) DO NOTHING;
-      UPDATE public.profiles SET role='provider',avatar_url='/placeholder.svg' WHERE id=account_id;
+      UPDATE public.profiles SET role='provider',avatar_url=p->>'avatar_url' WHERE id=account_id;
     END IF;
     IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE id=account_id AND role='provider' AND NOT is_admin) THEN
       RAISE EXCEPTION 'Demo profile missing or unexpectedly privileged: %', account_id;
@@ -78,7 +79,7 @@ BEGIN
       'bio_ar',disclaimer_ar||chr(10)||chr(10)||(p->>'bio_ar'),'bio_en',disclaimer_en||chr(10)||chr(10)||(p->>'bio_en'),
       'bio',disclaimer_en||chr(10)||chr(10)||(p->>'bio_en'),'categories',jsonb_build_array(p->>'category'),
       'starting_price',(SELECT min((value->>'price')::numeric) FROM jsonb_array_elements(p->'services')),
-      'avatar_url','/placeholder.svg','rating',0,'reviews_count',0,'completed_projects',0,'is_verified',false,
+      'avatar_url',p->>'avatar_url','rating',0,'reviews_count',0,'completed_projects',0,'is_verified',false,
       'tap_account_status','not_connected','tap_onboarding_completed',false,'created_at',anchor,'updated_at',anchor))
     ON CONFLICT (id) DO NOTHING;
     FOR s IN SELECT value FROM jsonb_array_elements(p->'services') LOOP
@@ -95,7 +96,7 @@ BEGIN
         'id',service_id_value,'provider_id',provider_id_value,'category',p->>'category',
         'description_ar',disclaimer_ar||chr(10)||chr(10)||(s->>'description_ar'),
         'description_en',disclaimer_en||chr(10)||chr(10)||(s->>'description_en'),
-        'image_urls',jsonb_build_array('/placeholder.svg'),'is_active',true,'created_at',anchor,'updated_at',anchor))
+        'image_urls',jsonb_build_array(s->>'image_url'),'is_active',true,'created_at',anchor,'updated_at',anchor))
       ON CONFLICT (id) DO NOTHING;
     END LOOP;
   END LOOP;

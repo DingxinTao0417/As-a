@@ -14,7 +14,7 @@
 | reviews | 4 | 4 | 0 |
 | withdrawal_requests | 0 | 0 | 0 |
 
-六个分类为 development、design、marketing、writing、video、consulting，各有两项服务。包含阿拉伯语和英语名称、描述、交付范围、价格与周期；覆盖固定价、小时价和起步价。名称带 `Demo / عرض تجريبي`，封面与头像使用项目已有 `/placeholder.svg`，便于后续替换为正式作品。
+六个分类为 development、design、marketing、writing、video、consulting，各有两项服务。包含阿拉伯语和英语名称、描述、交付范围、价格与周期；覆盖固定价、小时价和起步价。名称带 `Demo / عرض تجريبي`。2026-09-08 已为这批目录生成 6 张虚构人物头像和 12 张服务封面，规格、提示词摘要与 Storage 路径见 [演示图片素材](demo-assets.md)。
 
 占位身份邮箱使用 `example.invalid`，没有密码、identity 或 session，`banned_until` 为 2099-01-01；没有发送邀请邮件，也未创建任何凭据。它们用于关联展示目录，不能用来登录演示买卖双方操作。
 
@@ -31,6 +31,7 @@
 ## 可复用文件
 
 - [catalog.sql](../supabase/demo/catalog.sql)：事务导入，固定 UUID，认证元数据标记 `asaa-showcase-v1`。重复执行跳过已有演示目录，不覆盖编辑后的内容；身份或关联冲突即回滚。
+- [assets.sql](../supabase/demo/assets.sql)：只把已上传图片关联到固定演示 UUID；先核对全部归属，缺少目录记录时整笔回滚。
 - [verify-catalog.sql](../supabase/demo/verify-catalog.sql)：只读检查身份、分类数量、访客可见性和文案摘要。
 - [remove-catalog.sql](../supabase/demo/remove-catalog.sql)：仅清理这批精确编号；检测到订单、收藏、会话、Auth 活动、Storage、审计或未知引用时停止。**仅在本地验证过，未在线执行**。删除会丢弃对演示条目的编辑，原始目录可由 catalog.sql 重建。
 - [generate-catalog.mjs](../scripts/demo/generate-catalog.mjs)：从完整本地样本生成只含目录的 SQL，不连接数据库。
