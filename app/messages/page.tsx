@@ -21,6 +21,7 @@ import {
   Eye,
   Briefcase,
   ExternalLink,
+  AlertCircle,
 } from "lucide-react"
 import { useState, useEffect, useRef, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
@@ -44,10 +45,29 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { CreateOrderDialog } from "@/components/create-order-dialog"
-import { createPaymentCharge, completeOrder, confirmOrder, verifyPayment } from "@/app/actions/orders"
+import { OrderDeliveryDialog } from "@/components/order-delivery-dialog"
+import {
+  createPaymentCharge,getConversationOrders,verifyPayment,
+  type ConversationOrderCursor,
+} from "@/app/actions/orders"
 import { formatCurrency } from "@/lib/tap"
 import { useToast } from "@/hooks/use-toast"
 import type { RealtimeChannel } from "@supabase/supabase-js"
+import {
+  getConversationPage,
+  markConversationRead,
+  getConversationMessages,
+  openProviderConversation,
+  sendConversationMessage,
+  sendServiceCardMessage,
+  setConversationPreference,
+} from "@/app/actions/messages"
+import {
+  getPublicProviderServices,
+  type PublicProviderService,
+  type PublicProviderServiceCursor,
+} from "@/app/actions/catalog"
+import { getCurrentProviderContext } from "@/app/actions/providers"
 
 const formatRelativeTime = (date: Date) => {
   const diffSeconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000))
@@ -65,12 +85,14 @@ type Conversation = {
   provider_id: string
   seeker_id: string
   last_message_at: string
-  other_party_name: string
+  other_party_name_ar: string
+  other_party_name_en: string
   other_party_avatar: string
   is_provider: boolean
   is_pinned: boolean
   is_archived: boolean
   cleared_at: string | null
+  unread_count: number
 }
 
 type Message = {
@@ -98,6 +120,11 @@ type Order = {
   created_at: string
   paid_at?: string
   completed_at?: string
+  delivery_version?: number
+  latest_delivery_note?: string | null
+  latest_delivery_links?: string[]
+  latest_delivery_files?: Array<{path:string;name:string;mime:string;size:number}>
+  latest_revision_reason?: string | null
 }
 
 type ServiceCard = {
@@ -113,18 +140,7 @@ type ServiceCard = {
   image_url: string
 }
 
-type ProviderService = {
-  id: string
-  name_ar: string
-  name_en: string
-  description_ar: string | null
-  description_en: string | null
-  price: number
-  price_type: string
-  category: string
-  image_urls: string[]
-  is_active: boolean
-}
+type ProviderService=PublicProviderService
 
 export default function MessagesPage() {
   const { t, language } = useLanguage()
@@ -133,9 +149,11 @@ export default function MessagesPage() {
   const { toast } = useToast()
   const [user, setUser] = useState<any>(null)
   const [userProfile, setUserProfile] = useState<any>(null)
+  const [currentProviderId,setCurrentProviderId]=useState<string|null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedConversation, setSelectedConversation] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
+  const [messagesError, setMessagesError] = useState<string | null>(null)
   const [newMessage, setNewMessage] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [isLoading, setIsLoading] = useState(true)
@@ -143,13 +161,33 @@ export default function MessagesPage() {
   const [showClearDialog, setShowClearDialog] = useState(false)
   const [showArchiveDialog, setShowArchiveDialog] = useState(false)
   const [orders, setOrders] = useState<Order[]>([])
+  const [orderCursor,setOrderCursor]=useState<ConversationOrderCursor|null>(null)
+  const [orderTotal,setOrderTotal]=useState(0)
+  const [ordersError, setOrdersError] = useState<string | null>(null)
   const [showCreateOrder, setShowCreateOrder] = useState(false)
   const [processingPayment, setProcessingPayment] = useState(false)
-  const [processingConfirmation, setProcessingConfirmation] = useState(false)
   const [processedProviderId, setProcessedProviderId] = useState<string | null>(null)
   const [showServicesPanel, setShowServicesPanel] = useState(false)
   const [providerServices, setProviderServices] = useState<ProviderService[]>([])
+  const [providerServiceCursor,setProviderServiceCursor]=useState<PublicProviderServiceCursor|null>(null)
+  const [providerServiceTotal,setProviderServiceTotal]=useState(0)
+  const [loadingMoreServices,setLoadingMoreServices]=useState(false)
   const [loadingServices, setLoadingServices] = useState(false)
+  const [servicesError, setServicesError] = useState<string | null>(null)
+  const [sendingMessage, setSendingMessage] = useState(false)
+  const [sendingServiceId, setSendingServiceId] = useState<string | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
+  const [conversationCursor, setConversationCursor] = useState<{ pinned: boolean; lastMessageAt: string; id: string } | null>(null)
+  const [conversationTotal, setConversationTotal] = useState(0)
+  const [conversationsLoading, setConversationsLoading] = useState(true)
+  const [loadingMoreConversations, setLoadingMoreConversations] = useState(false)
+  const [conversationsError, setConversationsError] = useState<string | null>(null)
+  const [messageCursor, setMessageCursor] = useState<{ createdAt: string; id: string } | null>(null)
+  const [loadingOlderMessages, setLoadingOlderMessages] = useState(false)
+  const [realtimeStatus, setRealtimeStatus] = useState<"connecting" | "connected" | "disconnected">("disconnected")
+  const pendingMessageRequestId = useRef<string | null>(null)
+  const pendingServiceRequestIds = useRef(new Map<string, string>())
+  const conversationRequestId = useRef(0)
   const [orderPrefill, setOrderPrefill] = useState<{
     serviceNameAr: string; serviceNameEn: string
     serviceDescriptionAr: string; serviceDescriptionEn: string
@@ -206,7 +244,7 @@ export default function MessagesPage() {
       verifyPayment(orderId).then((result) => {
         if (result.success) {
           if (selectedConversation) {
-            fetchOrders(selectedConversation)
+            fetchOrders(selectedConversation,true)
           }
         }
       })
@@ -218,8 +256,14 @@ export default function MessagesPage() {
   // Setup Realtime subscription for messages when conversation is selected
   useEffect(() => {
     if (selectedConversation && user) {
-      const conv = conversations.find(c => c.id === selectedConversation)
-      fetchMessages(selectedConversation, conv?.cleared_at)
+      setRealtimeStatus("connecting")
+      setMessages([])
+      setMessagesError(null)
+      setOrdersError(null)
+      setMessageCursor(null)
+      setOrderCursor(null)
+      setOrderTotal(0)
+      fetchMessages(selectedConversation)
       fetchOrders(selectedConversation)
       
       // Setup realtime subscription for messages
@@ -232,6 +276,7 @@ export default function MessagesPage() {
         messagesChannelRef.current.unsubscribe()
         messagesChannelRef.current = null
       }
+      setRealtimeStatus("disconnected")
       if (ordersChannelRef.current) {
         ordersChannelRef.current.unsubscribe()
         ordersChannelRef.current = null
@@ -251,7 +296,13 @@ export default function MessagesPage() {
         conversationsChannelRef.current = null
       }
     }
-  }, [user])
+  }, [user,currentProviderId])
+
+  useEffect(() => {
+    if (!user) return
+    const timer = window.setTimeout(() => void fetchConversations(), 300)
+    return () => window.clearTimeout(timer)
+  }, [user,showArchived,searchQuery])
   
   const setupMessagesRealtime = useCallback((conversationId: string) => {
     const supabase = createClient()
@@ -319,10 +370,28 @@ export default function MessagesPage() {
           setMessages(prev => prev.filter(m => m.id !== deletedMsg.id))
         }
       )
-      .subscribe()
-  }, [])
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          setRealtimeStatus("connected")
+          void fetchMessages(conversationId)
+        } else {
+          const disconnected = status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED"
+          setRealtimeStatus(disconnected ? "disconnected" : "connecting")
+          if (disconnected) {
+            void supabase.auth.getUser().then(({ data,error }) => {
+              if (error || !data.user) {
+                void messagesChannelRef.current?.unsubscribe()
+                void conversationsChannelRef.current?.unsubscribe()
+                void ordersChannelRef.current?.unsubscribe()
+                router.push("/auth/login")
+              }
+            })
+          }
+        }
+      })
+  }, [user])
   
-  const setupConversationsRealtime = useCallback(async () => {
+  const setupConversationsRealtime = useCallback(() => {
     if (!user) return
     
     const supabase = createClient()
@@ -332,10 +401,9 @@ export default function MessagesPage() {
       conversationsChannelRef.current.unsubscribe()
     }
     
-    const { data: providerProfiles } = await supabase.from("providers").select("id").eq("user_id", user.id)
-    const providerIds = providerProfiles?.map((provider: any) => provider.id).filter(Boolean) || []
+    const providerIds = currentProviderId?[currentProviderId]:[]
     const handleConversationChange = () => {
-      fetchConversations(user.id)
+      fetchConversations()
     }
     
     let channel = supabase
@@ -366,7 +434,7 @@ export default function MessagesPage() {
 
     conversationsChannelRef.current = channel
       .subscribe()
-  }, [user])
+  }, [user,currentProviderId])
   
   const setupOrdersRealtime = useCallback((conversationId: string) => {
     const supabase = createClient()
@@ -388,7 +456,7 @@ export default function MessagesPage() {
           filter: `conversation_id=eq.${conversationId}`
         },
         () => {
-          fetchOrders(conversationId)
+          fetchOrders(conversationId,true)
         }
       )
       .subscribe()
@@ -407,84 +475,135 @@ export default function MessagesPage() {
 
     setUser(data.user)
 
-    const { data: profile } = await supabase.from("profiles").select("*").eq("id", data.user.id).single()
+    const contextResult=await getCurrentProviderContext()
+    if(contextResult.success){
+      setUserProfile({role:contextResult.data.role})
+      setCurrentProviderId(contextResult.data.provider?.id||null)
+    }else{
+      setUserProfile(null)
+      setCurrentProviderId(null)
+      toast({
+        title:t("تعذر تحميل صلاحيات الحساب","Could not load account permissions"),
+        description:t("قد لا تتوفر بعض الإجراءات حتى إعادة المحاولة","Some actions may remain unavailable until you retry"),
+        variant:"destructive",
+      })
+    }
 
-    setUserProfile(profile)
-
-    await fetchConversations(data.user.id)
     setIsLoading(false)
   }
 
-  const fetchOrders = async (conversationId: string) => {
-    const supabase = createClient()
-
+  const fetchOrders = async (conversationId:string,merge=false) => {
     try {
-      const { data, error } = await supabase
-        .from("orders")
-        .select("*")
-        .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: true })
-
-      if (error) {
+      const result=await getConversationOrders(conversationId)
+      if (!result.success) {
+        setOrdersError(t("تعذر تحميل الطلبات","Could not load orders"))
+        toast({title:t("تعذر تحميل الطلبات","Could not load orders"),description:result.error,variant:"destructive"})
         return
       }
-
-      setOrders(data || [])
+      const page=result.data.orders as unknown as Order[]
+      setOrders((current)=>{
+        if(!merge)return page
+        const byId=new Map(current.map((order)=>[order.id,order]))
+        for(const order of page)byId.set(order.id,order)
+        return [...byId.values()]
+      })
+      setOrderTotal(result.data.total)
+      setOrderCursor((current)=>merge?(current||result.data.nextCursor):result.data.nextCursor)
+      setOrdersError(null)
     } catch {
-      // ignored
+      const message=t("يرجى المحاولة مرة أخرى","Please try again")
+      setOrdersError(message)
+      toast({ title:t("تعذر تحميل الطلبات","Could not load orders"),description:message,variant:"destructive" })
     }
   }
 
   const parseServiceCard = (content: string): ServiceCard | null => {
-    if (!content.startsWith('{"__type":"service_card"')) return null
-    try { return JSON.parse(content) as ServiceCard } catch { return null }
+    try {
+      const parsed = JSON.parse(content) as Partial<ServiceCard>
+      return parsed.__type === "service_card"
+        && typeof parsed.id === "string"
+        && typeof parsed.name_ar === "string"
+        && typeof parsed.name_en === "string"
+        && typeof parsed.price === "number"
+        && Number.isFinite(parsed.price)
+        ? parsed as ServiceCard
+        : null
+    } catch {
+      return null
+    }
   }
 
   const fetchProviderServices = async (providerId: string) => {
     setLoadingServices(true)
-    const supabase = createClient()
-    const { data } = await supabase
-      .from("services")
-      .select("id, name_ar, name_en, description_ar, description_en, price, price_type, category, image_urls, is_active")
-      .eq("provider_id", providerId)
-      .eq("is_active", true)
-      .order("created_at", { ascending: false })
-    setProviderServices(data || [])
-    setLoadingServices(false)
+    setServicesError(null)
+    setProviderServices([])
+    setProviderServiceCursor(null)
+    setProviderServiceTotal(0)
+    try {
+      const result=await getPublicProviderServices(providerId)
+      if(!result.success)throw new Error(result.error)
+      setProviderServices(result.data.services)
+      setProviderServiceCursor(result.data.nextCursor)
+      setProviderServiceTotal(result.data.total)
+    } catch {
+      setServicesError(t("تعذر تحميل الخدمات","Could not load services"))
+      toast({
+        title: t("تعذر تحميل الخدمات", "Could not load services"),
+        description: t("يرجى المحاولة مرة أخرى", "Please try again"),
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingServices(false)
+    }
+  }
+
+  const loadMoreProviderServices=async(providerId:string)=>{
+    if(!providerServiceCursor||loadingMoreServices)return
+    setLoadingMoreServices(true)
+    const result=await getPublicProviderServices(providerId,providerServiceCursor)
+    if(result.success){
+      setProviderServices((current)=>[...current,...result.data.services.filter((service)=>!current.some((item)=>item.id===service.id))])
+      setProviderServiceCursor(result.data.nextCursor);setProviderServiceTotal(result.data.total);setServicesError(null)
+    }else{
+      setServicesError(result.error)
+      toast({title:t("تعذر تحميل خدمات أقدم","Could not load older services"),description:result.error,variant:"destructive"})
+    }
+    setLoadingMoreServices(false)
   }
 
   const sendServiceCard = async (service: ProviderService) => {
-    if (!selectedConversation) return
-    const card: ServiceCard = {
-      __type: "service_card",
-      id: service.id,
-      name_ar: service.name_ar,
-      name_en: service.name_en,
-      description_ar: service.description_ar || "",
-      description_en: service.description_en || "",
-      price: service.price,
-      price_type: service.price_type,
-      category: service.category,
-      image_url: service.image_urls?.[0] || "",
+    if (!selectedConversation || sendingServiceId) return
+    setSendingServiceId(service.id)
+    try {
+      const requestId = pendingServiceRequestIds.current.get(service.id) || crypto.randomUUID()
+      pendingServiceRequestIds.current.set(service.id, requestId)
+      const result = await sendServiceCardMessage({
+        conversationId: selectedConversation,
+        clientRequestId: requestId,
+        serviceId: service.id,
+      })
+      if (!result.success) throw new Error(result.error)
+      pendingServiceRequestIds.current.delete(service.id)
+      setShowServicesPanel(false)
+      await fetchMessages(selectedConversation)
+      await fetchConversations()
+      setTimeout(() => {
+        if (messagesContainerRef.current) {
+          messagesContainerRef.current.scrollTo({ top: messagesContainerRef.current.scrollHeight, behavior: "smooth" })
+        }
+      }, 100)
+    } catch {
+      toast({
+        title: t("لم يتم إرسال الخدمة", "Service was not sent"),
+        description: t("يرجى المحاولة مرة أخرى", "Please try again"),
+        variant: "destructive",
+      })
+    } finally {
+      setSendingServiceId(null)
     }
-    const supabase = createClient()
-    await supabase.from("messages").insert({
-      conversation_id: selectedConversation,
-      sender_id: user.id,
-      content: JSON.stringify(card),
-    })
-    await supabase.from("conversations").update({ last_message_at: new Date().toISOString() }).eq("id", selectedConversation)
-    setShowServicesPanel(false)
-    await fetchMessages(selectedConversation)
-    setTimeout(() => {
-      if (messagesContainerRef.current) {
-        messagesContainerRef.current.scrollTo({ top: messagesContainerRef.current.scrollHeight, behavior: "smooth" })
-      }
-    }, 100)
   }
 
-  const [showCompleteOrderDialog, setShowCompleteOrderDialog] = useState<string | null>(null)
-  const [showConfirmOrderDialog, setShowConfirmOrderDialog] = useState<string | null>(null)
+  const [deliveryDialog, setDeliveryDialog] = useState<{ orderId: string; role: "provider" | "seeker" } | null>(null)
 
   const handlePayment = async (orderId: string) => {
     setProcessingPayment(true)
@@ -509,290 +628,159 @@ export default function MessagesPage() {
     }
   }
 
-  const handleCompleteOrder = async (orderId: string) => {
-    setShowCompleteOrderDialog(orderId)
-  }
-
-  const executeCompleteOrder = async () => {
-    const orderId = showCompleteOrderDialog
-    setShowCompleteOrderDialog(null)
-    if (!orderId) return
-
+  const fetchConversations = async ({
+    append = false,
+    archived = showArchived,
+    query = searchQuery,
+  }: { append?: boolean; archived?: boolean; query?: string } = {}) => {
+    const requestId = ++conversationRequestId.current
+    if (append) setLoadingMoreConversations(true)
+    else setConversationsLoading(true)
     try {
-      const result = await completeOrder(orderId)
-
+      const result = await getConversationPage({
+        archived,
+        query,
+        cursor: append ? conversationCursor : null,
+        pageSize: 50,
+      })
+      if (requestId !== conversationRequestId.current) return
       if (!result.success) {
-        toast({ title: t("خطأ", "Error"), description: result.error, variant: "destructive" })
-      } else {
-        toast({ title: t("تم بنجاح", "Success"), description: language === "ar" ? "تم إكمال الطلب بنجاح!" : "Order completed successfully!" })
-        if (selectedConversation) {
-          await fetchOrders(selectedConversation)
-        }
-      }
-    } catch {
-      toast({ title: t("خطأ", "Error"), description: "Failed to complete order", variant: "destructive" })
-    }
-  }
-
-  const handleConfirmOrder = async (orderId: string) => {
-    setShowConfirmOrderDialog(orderId)
-  }
-
-  const executeConfirmOrder = async () => {
-    const orderId = showConfirmOrderDialog
-    setShowConfirmOrderDialog(null)
-    if (!orderId) return
-
-    setProcessingConfirmation(true)
-    try {
-      const result = await confirmOrder(orderId)
-
-      if (!result.success) {
-        toast({ title: t("خطأ", "Error"), description: result.error, variant: "destructive" })
-      } else {
-        toast({ title: t("تم بنجاح", "Success"), description: language === "ar" ? "تم تأكيد الطلب بنجاح!" : "Order confirmed successfully!" })
-        if (selectedConversation) {
-          await fetchOrders(selectedConversation)
-        }
-      }
-    } catch {
-      toast({ title: t("خطأ", "Error"), description: "Failed to confirm order", variant: "destructive" })
-    } finally {
-      setProcessingConfirmation(false)
-    }
-  }
-
-  const fetchConversations = async (userId: string) => {
-    const supabase = createClient()
-
-    try {
-
-      const { data: seekerConvs } = await supabase
-        .from("conversations")
-        .select("*")
-        .eq("seeker_id", userId)
-
-      // Filter non-archived conversations
-      const nonArchivedSeekerConvs = seekerConvs?.filter((c: any) => !c.is_archived_by_seeker) || []
-
-      // Get ALL provider profiles for this user (user may have multiple)
-      const { data: providerProfiles } = await supabase.from("providers").select("id").eq("user_id", userId)
-
-      let nonArchivedProviderConvs: any[] = []
-      if (providerProfiles && providerProfiles.length > 0) {
-        // Query conversations for ALL provider profiles
-        const providerIds = providerProfiles.map((p: any) => p.id)
-        const { data: pConvs } = await supabase
-          .from("conversations")
-          .select("*")
-          .in("provider_id", providerIds)
-
-        nonArchivedProviderConvs = pConvs?.filter((c: any) => !c.is_archived_by_provider) || []
-      }
-
-      const allConvs = [...nonArchivedSeekerConvs, ...nonArchivedProviderConvs]
-
-      if (allConvs.length === 0) {
-        setConversations([])
+        setConversationsError(result.error)
+        toast({ title:t("تعذر تحميل المحادثات","Could not load conversations"),description:result.error,variant:"destructive" })
         return
       }
-
-      const providerIds = [...new Set(allConvs.map((c: any) => c.provider_id))]
-      const seekerIds = [...new Set(allConvs.map((c: any) => c.seeker_id))]
-
-      const { data: providersData } = await supabase
-        .from("providers")
-        .select("id, name_ar, name_en, avatar_url")
-        .in("id", providerIds)
-
-      const { data: seekersData } = await supabase
-        .from("profiles")
-        .select("id, full_name, avatar_url")
-        .in("id", seekerIds)
-
-
-      const formattedConversations = allConvs.map((conv: any) => {
-        const isUserSeeker = conv.seeker_id === userId
-
-        if (isUserSeeker) {
-          const provider = providersData?.find((p: any) => p.id === conv.provider_id)
-          return {
-            id: conv.id,
-            provider_id: conv.provider_id,
-            seeker_id: conv.seeker_id,
-            last_message_at: conv.last_message_at,
-            other_party_name: provider ? (language === "ar" ? provider.name_ar : provider.name_en) : "Unknown",
-            other_party_avatar: provider?.avatar_url || "/placeholder.svg?height=48&width=48",
-            is_provider: false,
-            is_pinned: conv.is_pinned_by_seeker || false,
-            is_archived: conv.is_archived_by_seeker || false,
-            cleared_at: conv.seeker_cleared_at || null,
-          }
-        } else {
-          const seeker = seekersData?.find((s: any) => s.id === conv.seeker_id)
-          return {
-            id: conv.id,
-            provider_id: conv.provider_id,
-            seeker_id: conv.seeker_id,
-            last_message_at: conv.last_message_at,
-            other_party_name: seeker?.full_name || "Unknown User",
-            other_party_avatar: seeker?.avatar_url || "/placeholder.svg?height=48&width=48",
-            is_provider: true,
-            is_pinned: conv.is_pinned_by_provider || false,
-            is_archived: conv.is_archived_by_provider || false,
-            cleared_at: conv.provider_cleared_at || null,
-          }
-        }
+      const page = result.data.conversations as unknown as Conversation[]
+      setConversations((current) => {
+        if (!append) return page
+        const existing = new Set(current.map((conversation) => conversation.id))
+        return [...current,...page.filter((conversation) => !existing.has(conversation.id))]
       })
-
-
-      const sortedConversations = formattedConversations.sort((a, b) => {
-        if (a.is_pinned && !b.is_pinned) return -1
-        if (!a.is_pinned && b.is_pinned) return 1
-        return new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()
-      })
-
-      // Deduplicate by conversation ID
-      const seen = new Set<string>()
-      const uniqueConversations = sortedConversations.filter((conv) => {
-        if (seen.has(conv.id)) return false
-        seen.add(conv.id)
-        return true
-      })
-
-      setConversations(uniqueConversations || [])
+      if (!append || page.length > 0) setConversationTotal(result.data.total)
+      setConversationCursor(result.data.nextCursor)
+      setConversationsError(null)
     } catch {
-      // ignored
+      if (requestId !== conversationRequestId.current) return
+      const message = t("يرجى المحاولة مرة أخرى","Please try again")
+      setConversationsError(message)
+      toast({ title:t("تعذر تحميل المحادثات","Could not load conversations"),description:message,variant:"destructive" })
+    } finally {
+      if (requestId === conversationRequestId.current) {
+        setLoadingMoreConversations(false)
+        setConversationsLoading(false)
+      }
     }
   }
 
   const createOrOpenConversation = async (providerId: string) => {
-    const supabase = createClient()
-
     try {
-
-      // Validate that the providerId is a real provider
-      const { data: providerExists, error: providerError } = await supabase
-        .from("providers")
-        .select("id")
-        .eq("id", providerId)
-        .single()
-
-      if (providerError || !providerExists) {
+      const result = await openProviderConversation(providerId)
+      if (!result.success) {
+        toast({ title: t("تعذر فتح المحادثة", "Could not open conversation"), description: result.error, variant: "destructive" })
         router.replace("/messages", { scroll: false })
         return
       }
-
-      const { data: existing } = await supabase
-        .from("conversations")
-        .select("*")
-        .eq("seeker_id", user.id)
-        .eq("provider_id", providerId)
-        .single()
-
-
-      if (existing) {
-
-        if (existing.is_archived_by_seeker) {
-          await supabase
-            .from("conversations")
-            .update({
-              is_archived_by_seeker: false,
-              last_message_at: new Date().toISOString(),
-            })
-            .eq("id", existing.id)
-        }
-
-        // First refresh conversations list, then set selected
-        await fetchConversations(user.id)
-        setSelectedConversation(existing.id)
-      } else {
-        const { data: newConv } = await supabase
-          .from("conversations")
-          .insert({
-            seeker_id: user.id,
-            provider_id: providerId,
-          })
-          .select()
-          .single()
-
-
-        if (newConv) {
-          // First refresh conversations list, then set selected
-          await fetchConversations(user.id)
-          setSelectedConversation(newConv.id)
-        }
-      }
-      
-      // Clear the URL parameter after processing
+      setShowArchived(false)
+      setSearchQuery("")
+      await fetchConversations({ archived:false,query:"" })
+      setSelectedConversation(result.data.conversationId)
       router.replace("/messages", { scroll: false })
     } catch {
-      // ignored
+      toast({ title: t("تعذر فتح المحادثة", "Could not open conversation"), description: t("يرجى المحاولة مرة أخرى", "Please try again"), variant: "destructive" })
+      router.replace("/messages", { scroll: false })
     }
   }
 
-  const fetchMessages = async (conversationId: string, clearedAt?: string | null) => {
-    const supabase = createClient()
-
+  const fetchMessages = async (conversationId: string) => {
     try {
-
-      let query = supabase
-        .from("messages")
-        .select("*")
-        .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: true })
-
-      if (clearedAt) {
-        query = query.gt("created_at", clearedAt)
-      }
-
-      const { data: result, error } = await query
-
-      if (error) {
+      const result = await getConversationMessages(conversationId)
+      if (!result.success) {
+        setMessagesError(result.error)
+        toast({ title: t("تعذر تحميل الرسائل", "Could not load messages"), description: result.error, variant: "destructive" })
         return
       }
+      const page = result.data.messages as Message[]
+      setMessages(page)
+      setMessagesError(null)
+      setMessageCursor(result.data.nextCursor)
 
-
-      setMessages(result || [])
-
-      const unreadMessages = result?.filter((m: any) => !m.is_read && m.sender_id !== user.id)
-      if (unreadMessages && unreadMessages.length > 0) {
-        const unreadIds = unreadMessages.map((message: any) => message.id)
-        await supabase.from("messages").update({ is_read: true }).in("id", unreadIds)
+      if (page.some((message) => !message.is_read && message.sender_id !== user.id)) {
+        const readResult = await markConversationRead(conversationId)
+        if (!readResult.success) {
+          toast({ title: t("تعذر تحديث حالة القراءة", "Could not update read status"), description: readResult.error, variant: "destructive" })
+        }
+        await fetchConversations()
       }
     } catch {
-      // ignored
+      const message=t("يرجى المحاولة مرة أخرى", "Please try again")
+      setMessagesError(message)
+      toast({ title: t("تعذر تحميل الرسائل", "Could not load messages"), description:message, variant: "destructive" })
+    }
+  }
+
+  const loadOlderMessages = async () => {
+    if (!selectedConversation || (!messageCursor&&!orderCursor) || loadingOlderMessages) return
+    setLoadingOlderMessages(true)
+    const previousHeight = messagesContainerRef.current?.scrollHeight || 0
+    try {
+      const [messageResult,orderResult]=await Promise.all([
+        messageCursor?getConversationMessages(selectedConversation,messageCursor):Promise.resolve(null),
+        orderCursor?getConversationOrders(selectedConversation,orderCursor):Promise.resolve(null),
+      ])
+      if(messageResult){
+        if(!messageResult.success)toast({title:t("تعذر تحميل الرسائل الأقدم","Could not load older messages"),description:messageResult.error,variant:"destructive"})
+        else{
+          const older=messageResult.data.messages as Message[]
+          setMessages((current)=>{
+            const existing=new Set(current.map((message)=>message.id))
+            return [...older.filter((message)=>!existing.has(message.id)),...current]
+          })
+          setMessageCursor(messageResult.data.nextCursor)
+        }
+      }
+      if(orderResult){
+        if(!orderResult.success)toast({title:t("تعذر تحميل الطلبات الأقدم","Could not load older orders"),description:orderResult.error,variant:"destructive"})
+        else{
+          const older=orderResult.data.orders as unknown as Order[]
+          setOrders((current)=>{
+            const existing=new Set(current.map((order)=>order.id))
+            return [...older.filter((order)=>!existing.has(order.id)),...current]
+          })
+          setOrderCursor(orderResult.data.nextCursor);setOrderTotal(orderResult.data.total)
+        }
+      }
+      requestAnimationFrame(() => {
+        if (messagesContainerRef.current) {
+          messagesContainerRef.current.scrollTop += messagesContainerRef.current.scrollHeight - previousHeight
+        }
+      })
+    } catch {
+      toast({ title: t("تعذر تحميل النشاط الأقدم", "Could not load older activity"), description: t("يرجى المحاولة مرة أخرى", "Please try again"), variant: "destructive" })
+    } finally {
+      setLoadingOlderMessages(false)
     }
   }
 
   const sendMessage = async () => {
-    if (!newMessage.trim() || !selectedConversation) return
+    if (!newMessage.trim() || !selectedConversation || sendingMessage) return
 
-    const supabase = createClient()
+    setSendingMessage(true)
 
     try {
-      const messageContent = newMessage
-      const { data } = await supabase
-        .from("messages")
-        .insert({
-          conversation_id: selectedConversation,
-          sender_id: user.id,
-          content: messageContent,
-        })
-        .select()
-        .single()
-
-
-      await supabase
-        .from("conversations")
-        .update({ last_message_at: new Date().toISOString() })
-        .eq("id", selectedConversation)
+      const messageContent = newMessage.trim()
+      const requestId = pendingMessageRequestId.current || crypto.randomUUID()
+      pendingMessageRequestId.current = requestId
+      const result = await sendConversationMessage({
+        conversationId: selectedConversation,
+        clientRequestId: requestId,
+        content: messageContent,
+      })
+      if (!result.success) throw new Error(result.error)
 
       setNewMessage("")
-      if (data) {
-        setMessages((prev) => (prev.some((message) => message.id === data.id) ? prev : [...prev, data as Message]))
-      }
-      await fetchConversations(user.id)
+      pendingMessageRequestId.current = null
+      const sentMessage = result.data.message as Message
+      setMessages((prev) => (prev.some((message) => message.id === sentMessage.id) ? prev : [...prev, sentMessage]))
+      await fetchConversations()
 
       setTimeout(() => {
         if (messagesContainerRef.current) {
@@ -803,80 +791,65 @@ export default function MessagesPage() {
         }
       }, 100)
     } catch {
-      // ignored
+      toast({
+        title: t("لم يتم إرسال الرسالة", "Message was not sent"),
+        description: t("تم الاحتفاظ بالنص. حاول مرة أخرى", "Your text was kept. Try again"),
+        variant: "destructive",
+      })
+    } finally {
+      setSendingMessage(false)
     }
   }
 
   const togglePin = async (conversationId: string, currentPinStatus: boolean) => {
-    const supabase = createClient()
     const conversation = conversations.find((c) => c.id === conversationId)
     if (!conversation) return
 
     try {
-      const updateField = conversation.is_provider ? "is_pinned_by_provider" : "is_pinned_by_seeker"
-
-      await supabase
-        .from("conversations")
-        .update({ [updateField]: !currentPinStatus })
-        .eq("id", conversationId)
-
-      await fetchConversations(user.id)
+      const result = await setConversationPreference(conversationId, "pinned", !currentPinStatus)
+      if (!result.success) throw new Error(result.error)
+      await fetchConversations()
     } catch {
-      // ignored
+      toast({ title: t("فشل الحفظ", "Save failed"), description: t("تعذر تحديث التثبيت", "Could not update pin status"), variant: "destructive" })
     }
   }
 
-  const archiveConversation = async (conversationId: string) => {
-    const supabase = createClient()
+  const archiveConversation = async (conversationId: string, archived = true) => {
     const conversation = conversations.find((c) => c.id === conversationId)
     if (!conversation) return
 
     try {
-      const updateField = conversation.is_provider ? "is_archived_by_provider" : "is_archived_by_seeker"
-
-      await supabase
-        .from("conversations")
-        .update({ [updateField]: true })
-        .eq("id", conversationId)
-
+      const result = await setConversationPreference(conversationId, "archived", archived)
+      if (!result.success) throw new Error(result.error)
       if (selectedConversation === conversationId) {
         setSelectedConversation(null)
       }
-
-      await fetchConversations(user.id)
+      await fetchConversations()
     } catch {
-      // ignored
+      toast({ title: t("فشل الحفظ", "Save failed"), description: t("تعذر تحديث حالة المحادثة", "Could not update conversation visibility"), variant: "destructive" })
     }
   }
 
   const clearChat = async () => {
     if (!selectedConversation || !currentConversation) return
 
-    const supabase = createClient()
-
     try {
-      const field = currentConversation.is_provider ? "provider_cleared_at" : "seeker_cleared_at"
-      const { error } = await supabase
-        .from("conversations")
-        .update({ [field]: new Date().toISOString() })
-        .eq("id", selectedConversation)
-
-      if (error) {
-        return
-      }
-
+      const result = await setConversationPreference(selectedConversation, "cleared")
+      if (!result.success) throw new Error(result.error)
       setMessages([])
+      setMessageCursor(null)
       setShowClearDialog(false)
-      await fetchConversations(user.id)
+      await fetchConversations()
     } catch {
-      // ignored
+      toast({ title: t("فشل المسح", "Clear failed"), description: t("يرجى المحاولة مرة أخرى", "Please try again"), variant: "destructive" })
     }
   }
 
-  const filteredConversations = conversations.filter((conv) =>
-    !searchQuery.trim() || conv.other_party_name?.toLowerCase().includes(searchQuery.trim().toLowerCase()),
-  )
+  const filteredConversations = conversations
   const currentConversation = conversations.find((c) => c.id === selectedConversation)
+  const conversationName = (conversation: Conversation) =>
+    (language === "ar" ? conversation.other_party_name_ar : conversation.other_party_name_en)
+      || t("مستخدم غير معروف","Unknown User")
 
   if (isLoading) {
     return (
@@ -898,12 +871,17 @@ export default function MessagesPage() {
           {/* Conversations List */}
           <Card className={`flex flex-col overflow-hidden ${selectedConversation ? "hidden md:flex" : "flex"}`}>
             <div className="p-4 border-b">
-              <h2 className="font-bold text-xl mb-3">{t("المحادثات", "Messages")}</h2>
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <h2 className="font-bold text-xl">{showArchived ? t("المحادثات المخفية", "Hidden Messages") : t("المحادثات", "Messages")}</h2>
+                <Button variant="ghost" size="sm" onClick={() => { setSelectedConversation(null); setShowArchived((value) => !value) }}>
+                  {showArchived ? t("النشطة", "Active") : t("المخفية", "Hidden")}
+                </Button>
+              </div>
               <div className="relative">
-                <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder={t("بحث...", "Search...")}
-                  className="pr-10"
+                  className="ps-10"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   aria-label={t("بحث في المحادثات", "Search conversations")}
@@ -912,45 +890,80 @@ export default function MessagesPage() {
             </div>
 
             <div className="flex-1 overflow-y-auto">
-              {filteredConversations.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-center p-6">
-                  <MessageCircle className="h-12 w-12 text-muted-foreground mb-3" />
-                  <p className="text-muted-foreground">{t("لا توجد محادثات بعد", "No conversations yet")}</p>
-                  <Button variant="link" asChild className="mt-2">
-                    <a href="/services/seeker">{t("تصفح المحترفين", "Browse Professionals")}</a>
+              {conversationsLoading ? (
+                <div className="flex h-full items-center justify-center" aria-label={t("جاري تحميل المحادثات","Loading conversations")}>
+                  <div className="h-7 w-7 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent" />
+                </div>
+              ) : conversationsError && filteredConversations.length === 0 ? (
+                <div className="flex h-full flex-col items-center justify-center p-6 text-center">
+                  <AlertCircle className="mb-3 h-10 w-10 text-destructive" />
+                  <p className="text-sm text-muted-foreground">{conversationsError}</p>
+                  <Button variant="outline" className="mt-3" onClick={() => void fetchConversations()}>
+                    {t("إعادة المحاولة", "Retry")}
                   </Button>
                 </div>
+              ) : filteredConversations.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-center p-6">
+                  <MessageCircle className="h-12 w-12 text-muted-foreground mb-3" />
+                  <p className="text-muted-foreground">
+                    {showArchived ? t("لا توجد محادثات مخفية", "No hidden conversations") : t("لا توجد محادثات بعد", "No conversations yet")}
+                  </p>
+                  {!showArchived && (
+                    <Button variant="link" asChild className="mt-2">
+                      <a href="/services/seeker">{t("تصفح المحترفين", "Browse Professionals")}</a>
+                    </Button>
+                  )}
+                </div>
               ) : (
-                filteredConversations.map((conv) => (
-                  <div
-                    key={conv.id}
-                    className={`p-4 border-b cursor-pointer hover:bg-muted/50 transition-colors ${
-                      selectedConversation === conv.id ? "bg-muted" : ""
-                    }`}
-                    onClick={() => setSelectedConversation(conv.id)}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Avatar className="h-12 w-12">
-                        <Image
-                          src={conv.other_party_avatar || "/placeholder.svg"}
-                          alt={conv.other_party_name}
-                          width={48}
-                          height={48}
-                          className="h-full w-full object-cover"
-                        />
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="font-semibold truncate">{conv.other_party_name}</p>
-                          {conv.is_pinned && <Pin className="h-4 w-4 text-primary shrink-0" />}
+                <>
+                  {filteredConversations.map((conv) => (
+                    <div
+                      key={conv.id}
+                      className={`p-4 border-b cursor-pointer hover:bg-muted/50 transition-colors ${
+                        selectedConversation === conv.id ? "bg-muted" : ""
+                      }`}
+                      onClick={() => setSelectedConversation(conv.id)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-12 w-12">
+                          <Image
+                            src={conv.other_party_avatar || "/placeholder.svg"}
+                            alt={conversationName(conv)}
+                            width={48}
+                            height={48}
+                            className="h-full w-full object-cover"
+                          />
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold truncate">{conversationName(conv)}</p>
+                            {conv.is_pinned && <Pin className="h-4 w-4 text-primary shrink-0" />}
+                            {conv.unread_count > 0 && (
+                              <span className="min-w-5 h-5 px-1 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">
+                                {conv.unread_count > 99 ? "99+" : conv.unread_count}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            {new Date(conv.last_message_at).toLocaleDateString(language === "ar" ? "ar-SA" : "en-US")}
+                          </p>
                         </div>
-                        <p className="text-sm text-muted-foreground">
-                          {new Date(conv.last_message_at).toLocaleDateString(language === "ar" ? "ar-SA" : "en-US")}
-                        </p>
                       </div>
                     </div>
-                  </div>
-                ))
+                  ))}
+                  {conversationCursor && conversations.length < conversationTotal && (
+                    <div className="p-3 text-center">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void fetchConversations({ append:true })}
+                        disabled={loadingMoreConversations}
+                      >
+                        {loadingMoreConversations ? t("جاري التحميل...","Loading...") : t("تحميل محادثات أقدم","Load Older Conversations")}
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </Card>
@@ -966,18 +979,25 @@ export default function MessagesPage() {
                   <Avatar className="h-10 w-10">
                     <Image
                       src={currentConversation.other_party_avatar || "/placeholder.svg"}
-                      alt={currentConversation.other_party_name}
+                      alt={conversationName(currentConversation)}
                       width={40}
                       height={40}
                       className="h-full w-full object-cover"
                     />
                   </Avatar>
                   <div className="flex-1">
-                    <p className="font-semibold">{currentConversation.other_party_name}</p>
+                    <p className="font-semibold">{conversationName(currentConversation)}</p>
                     <p className="text-xs text-muted-foreground">
                       {currentConversation.last_message_at
                         ? t("آخر نشاط ", "Last active ") + formatRelativeTime(new Date(currentConversation.last_message_at))
                         : ""}
+                    </p>
+                    <p className="text-xs text-muted-foreground" role="status">
+                      {realtimeStatus === "connected"
+                        ? t("متصل", "Connected")
+                        : realtimeStatus === "connecting"
+                        ? t("جاري الاتصال...", "Connecting...")
+                        : t("غير متصل - ستتم المزامنة عند العودة", "Offline - messages will sync when reconnected")}
                     </p>
                   </div>
 
@@ -1010,19 +1030,46 @@ export default function MessagesPage() {
                         <X className="h-4 w-4 me-2" />
                         {t("مسح المحادثة", "Clear Chat")}
                       </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => setShowArchiveDialog(true)}
-                        className="text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4 me-2" />
-                        {t("إخفاء المحادثة", "Hide Conversation")}
-                      </DropdownMenuItem>
+                      {currentConversation.is_archived ? (
+                        <DropdownMenuItem onClick={() => archiveConversation(selectedConversation, false)}>
+                          <MessageCircle className="h-4 w-4 me-2" />
+                          {t("استعادة المحادثة", "Restore Conversation")}
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem
+                          onClick={() => setShowArchiveDialog(true)}
+                          className="text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4 me-2" />
+                          {t("إخفاء المحادثة", "Hide Conversation")}
+                        </DropdownMenuItem>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
 
                 <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
-                  {messages.length === 0 && orders.length === 0 && (
+                  {(messagesError || ordersError) && (
+                    <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm" role="alert">
+                      <p className="font-medium text-destructive">{t("لم يكتمل تحميل المحادثة","Conversation did not fully load")}</p>
+                      <p className="mt-1 text-muted-foreground">{[messagesError,ordersError].filter(Boolean).join(" · ")}</p>
+                      <Button variant="outline" size="sm" className="mt-2" onClick={() => {
+                        void fetchMessages(selectedConversation)
+                        void fetchOrders(selectedConversation)
+                      }}>
+                        {t("إعادة المحاولة","Retry")}
+                      </Button>
+                    </div>
+                  )}
+                  {(messageCursor||orderCursor) && (
+                    <div className="flex justify-center">
+                      <Button variant="outline" size="sm" onClick={loadOlderMessages} disabled={loadingOlderMessages}>
+                        {loadingOlderMessages ? t("جاري التحميل...", "Loading...") : t("تحميل نشاط أقدم", "Load older activity")}
+                        {orderTotal>0&&<span className="ms-1 text-xs text-muted-foreground">({orders.length}/{orderTotal} {t("طلبات","orders")})</span>}
+                      </Button>
+                    </div>
+                  )}
+                  {!messagesError && !ordersError && messages.length === 0 && orders.length === 0 && (
                     <div className="flex items-center justify-center h-full">
                       <div className="text-center max-w-md p-6 bg-muted/30 rounded-lg">
                         <MessageCircle className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
@@ -1162,11 +1209,11 @@ export default function MessagesPage() {
                                 <div className="bg-muted/50 rounded-lg p-3 space-y-1 text-sm">
                                   <div className="flex justify-between">
                                     <span>{t("المبلغ:", "Amount:")}</span>
-                                    <span className="font-bold">{formatCurrency(order.amount)}</span>
+                                    <span className="font-bold">{formatCurrency(order.amount,language)}</span>
                                   </div>
                                   <div className="flex justify-between text-xs text-muted-foreground">
                                     <span>{t("رسوم المنصة:", "Platform Fee:")}</span>
-                                    <span>-{formatCurrency(order.platform_fee)}</span>
+                                    <span>-{formatCurrency(order.platform_fee,language)}</span>
                                   </div>
                                   {order.paid_at && (
                                     <div className="flex justify-between text-xs text-muted-foreground pt-1 border-t">
@@ -1195,7 +1242,9 @@ export default function MessagesPage() {
                                         ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
                                         : order.status === "paid"
                                           ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
-                                          : order.status === "completed"
+                                        : order.status === "revision_requested"
+                                          ? "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300"
+                                        : order.status === "completed"
                                             ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
                                             : order.status === "awaiting_confirmation"
                                               ? "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300"
@@ -1206,6 +1255,7 @@ export default function MessagesPage() {
                                   >
                                     {order.status === "pending" && t("قيد الانتظار", "Pending")}
                                     {order.status === "paid" && t("مدفوع", "Paid")}
+                                    {order.status === "revision_requested" && t("تعديل مطلوب", "Revision Requested")}
                                     {order.status === "completed" && t("مكتمل", "Completed")}
                                     {order.status === "cancelled" && t("ملغي", "Cancelled")}
                                     {order.status === "awaiting_confirmation" &&
@@ -1239,15 +1289,12 @@ export default function MessagesPage() {
                                           onClick={(e) => {
                                             e.preventDefault()
                                             e.stopPropagation()
-                                            handleConfirmOrder(order.id)
+                                            setDeliveryDialog({ orderId: order.id, role: "seeker" })
                                           }}
-                                          disabled={processingConfirmation}
                                           className="gap-2"
                                         >
                                           <CheckCircle className="h-4 w-4" />
-                                          {processingConfirmation
-                                            ? t("جاري المعالجة...", "Processing...")
-                                            : t("تأكيد الاستلام", "Confirm Delivery")}
+                                          {t("مراجعة التسليم", "Review Delivery")}
                                         </Button>
                                       )}
                                       {(order.status === "paid" || order.status === "completed") && (
@@ -1271,19 +1318,21 @@ export default function MessagesPage() {
                                   {/* Provider buttons - only show when user is provider */}
                                   {currentConversation?.is_provider && (
                                     <>
-                                      {order.status === "paid" && (
+                                      {(order.status === "paid" || order.status === "revision_requested") && (
                                         <Button
                                           size="sm"
                                           variant="outline"
                                           onClick={(e) => {
                                             e.preventDefault()
                                             e.stopPropagation()
-                                            handleCompleteOrder(order.id)
+                                            setDeliveryDialog({ orderId: order.id, role: "provider" })
                                           }}
                                           className="gap-2"
                                         >
                                           <CheckCircle className="h-4 w-4" />
-                                          {t("إكمال الطلب", "Complete Order")}
+                                          {order.status === "revision_requested"
+                                            ? t("إعادة التسليم", "Resubmit")
+                                            : t("تسليم الطلب", "Deliver Order")}
                                         </Button>
                                       )}
                                       {(order.status === "awaiting_confirmation" || order.status === "completed") && (
@@ -1293,12 +1342,12 @@ export default function MessagesPage() {
                                           onClick={(e) => {
                                             e.preventDefault()
                                             e.stopPropagation()
-                                            router.push("/dashboard")
+                                            setDeliveryDialog({ orderId: order.id, role: "provider" })
                                           }}
                                           className="gap-2"
                                         >
                                           <Eye className="h-4 w-4" />
-                                          {t("عرض التفاصيل", "View Details")}
+                                          {t("عرض التسليم", "View Delivery")}
                                         </Button>
                                       )}
                                     </>
@@ -1330,12 +1379,21 @@ export default function MessagesPage() {
                     )}
                     <Input
                       value={newMessage}
-                      onChange={(e) => setNewMessage(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+                      onChange={(e) => {
+                        if (e.target.value !== newMessage) pendingMessageRequestId.current = null
+                        setNewMessage(e.target.value)
+                      }}
+                      maxLength={10000}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault()
+                          sendMessage()
+                        }
+                      }}
                       placeholder={t("اكتب رسالة...", "Type a message...")}
                       className="flex-1"
                     />
-                    <Button onClick={sendMessage} disabled={!newMessage.trim()}>
+                    <Button onClick={sendMessage} disabled={!newMessage.trim() || sendingMessage}>
                       <Send className="h-4 w-4" />
                     </Button>
                   </div>
@@ -1362,8 +1420,6 @@ export default function MessagesPage() {
         <>
           <CreateOrderDialog
             conversationId={selectedConversation}
-            seekerId={currentConversation.seeker_id}
-            providerId={currentConversation.provider_id}
             prefill={orderPrefill ?? undefined}
             onClose={() => {
               setShowCreateOrder(false)
@@ -1371,7 +1427,7 @@ export default function MessagesPage() {
             }}
             onSuccess={() => {
               if (selectedConversation) {
-                fetchOrders(selectedConversation)
+                fetchOrders(selectedConversation,true)
               }
             }}
           />
@@ -1384,13 +1440,22 @@ export default function MessagesPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Briefcase className="h-5 w-5" />
-              {t("خدمات مقدم الخدمة", "Provider Services")}
+              {t("خدمات مقدم الخدمة", "Provider Services")} <span className="text-sm font-normal text-muted-foreground">({providerServices.length}/{providerServiceTotal})</span>
             </DialogTitle>
           </DialogHeader>
-          <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+          <div className="flex-1 overflow-y-auto space-y-3 pe-1">
             {loadingServices ? (
               <div className="flex justify-center py-10">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+              </div>
+            ) : servicesError&&providerServices.length===0 ? (
+              <div className="py-10 text-center" role="alert">
+                <p className="text-sm text-destructive">{servicesError}</p>
+                {currentConversation && (
+                  <Button variant="outline" size="sm" className="mt-3" onClick={() => void fetchProviderServices(currentConversation.provider_id)}>
+                    {t("إعادة المحاولة","Retry")}
+                  </Button>
+                )}
               </div>
             ) : providerServices.length === 0 ? (
               <div className="text-center py-10 text-muted-foreground">
@@ -1398,7 +1463,7 @@ export default function MessagesPage() {
                 <p>{t("لا توجد خدمات متاحة", "No services available")}</p>
               </div>
             ) : (
-              providerServices.map((service) => {
+              <>{servicesError&&<div className="rounded border border-destructive/30 p-3 text-sm text-destructive" role="alert">{t("تعذر تحديث الخدمات؛ المعروض هو آخر بيانات ناجحة","Service refresh failed; showing the last successful data")}</div>}{providerServices.map((service) => {
                 const name = language === "ar" ? service.name_ar : service.name_en
                 const desc = language === "ar" ? service.description_ar : service.description_en
                 const cover = service.image_urls?.[0]
@@ -1425,6 +1490,7 @@ export default function MessagesPage() {
                           size="sm"
                           className="h-7 text-xs gap-1"
                           onClick={() => sendServiceCard(service)}
+                          disabled={sendingServiceId !== null}
                         >
                           <Send className="h-3 w-3" />
                           {t("إرسال", "Send")}
@@ -1433,7 +1499,7 @@ export default function MessagesPage() {
                     </div>
                   </div>
                 )
-              })
+              })}{currentConversation&&providerServiceCursor&&providerServices.length<providerServiceTotal&&<Button variant="outline" onClick={()=>void loadMoreProviderServices(currentConversation.provider_id)} disabled={loadingMoreServices}>{loadingMoreServices?t("جاري التحميل...","Loading..."):t("تحميل خدمات أقدم","Load Older Services")}</Button>}</>
             )}
           </div>
         </DialogContent>
@@ -1482,35 +1548,16 @@ export default function MessagesPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={!!showCompleteOrderDialog} onOpenChange={(open) => !open && setShowCompleteOrderDialog(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("تأكيد إكمال الطلب", "Confirm Order Completion")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("هل أنت متأكد من إكمال هذا الطلب؟", "Are you sure you want to complete this order?")}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("إلغاء", "Cancel")}</AlertDialogCancel>
-            <AlertDialogAction onClick={executeCompleteOrder}>{t("إكمال", "Complete")}</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={!!showConfirmOrderDialog} onOpenChange={(open) => !open && setShowConfirmOrderDialog(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("تأكيد استلام الخدمة", "Confirm Service Delivery")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("هل تؤكد استلام الخدمة وإتمام الطلب؟", "Do you confirm receiving the service and completing the order?")}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("إلغاء", "Cancel")}</AlertDialogCancel>
-            <AlertDialogAction onClick={executeConfirmOrder}>{t("تأكيد", "Confirm")}</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <OrderDeliveryDialog
+        order={deliveryDialog ? orders.find((order) => order.id === deliveryDialog.orderId) || null : null}
+        role={deliveryDialog?.role || "seeker"}
+        open={!!deliveryDialog}
+        onOpenChange={(open) => !open && setDeliveryDialog(null)}
+        onUpdated={async () => {
+          setDeliveryDialog(null)
+          if (selectedConversation) await fetchOrders(selectedConversation)
+        }}
+      />
     </div>
   )
 }

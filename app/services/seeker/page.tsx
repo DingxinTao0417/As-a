@@ -7,13 +7,15 @@ import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useLanguage } from "@/components/language-provider"
 import { Search, Star, Filter, SlidersHorizontal, MessageCircle, Clock, DollarSign, ChevronLeft, ChevronRight } from "lucide-react"
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect } from "react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { createClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
+import { getServiceCatalog } from "@/app/actions/catalog"
+import { useToast } from "@/hooks/use-toast"
 
 type ServiceWithProvider = {
   id: string
@@ -43,14 +45,21 @@ type ServiceWithProvider = {
 export default function TaskSeekerPage() {
   const { t, language } = useLanguage()
   const [searchQuery, setSearchQuery] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("all")
-  const [sortBy, setSortBy] = useState("newest")
+  const [sortBy, setSortBy] = useState<"newest" | "rating" | "price-low" | "price-high">("newest")
   const [services, setServices] = useState<ServiceWithProvider[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const [totalServices, setTotalServices] = useState(0)
   const [user, setUser] = useState<any>(null)
+  const [authUnavailable, setAuthUnavailable] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
+  const [queryReady, setQueryReady] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
   const PAGE_SIZE = 12
   const router = useRouter()
+  const { toast }=useToast()
 
   const categories = [
     { id: "all", nameAr: "الكل", nameEn: "All" },
@@ -64,80 +73,90 @@ export default function TaskSeekerPage() {
   ]
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const query = params.get("q") || ""
+    const category = categories.some((item) => item.id === params.get("category")) ? params.get("category")! : "all"
+    const sort = ["newest", "rating", "price-low", "price-high"].includes(params.get("sort") || "")
+      ? params.get("sort") as typeof sortBy
+      : "newest"
+    const page = Number.parseInt(params.get("page") || "1", 10)
+    setSearchQuery(query)
+    setDebouncedSearch(query)
+    setSelectedCategory(category)
+    setSortBy(sort)
+    setCurrentPage(Number.isFinite(page) && page > 0 ? page : 1)
+    setQueryReady(true)
+  }, [])
+
+  useEffect(() => {
+    if (!queryReady) return
+    if (searchQuery.trim() === debouncedSearch) return
+    const timeout = window.setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim())
+      setCurrentPage(1)
+    }, 300)
+    return () => window.clearTimeout(timeout)
+  }, [queryReady, searchQuery])
+
+  useEffect(() => {
+    if (!queryReady) return
     async function fetchServices() {
-      const supabase = createClient()
       setIsLoading(true)
-
+      setLoadError(false)
       try {
-        const { data, error } = await supabase
-          .from("services")
-          .select(`
-            *,
-            providers (
-              id,
-              name_ar,
-              name_en,
-              avatar_url,
-              rating,
-              reviews_count,
-              is_verified
-            )
-          `)
-          .eq("is_active", true)
-          .order("created_at", { ascending: false })
-
-        if (error) {
+        const result = await getServiceCatalog({
+          query: debouncedSearch,
+          category: selectedCategory as "all" | "development" | "design" | "marketing" | "writing" | "video" | "music" | "business" | "consulting",
+          sort: sortBy,
+          page: currentPage,
+          pageSize: PAGE_SIZE,
+        })
+        if (!result.success) {
+          setLoadError(true)
           return
         }
-
-        setServices((data as ServiceWithProvider[]) || [])
+        if (result.data.services.length === 0 && currentPage > 1) {
+          setCurrentPage(1)
+          return
+        }
+        setServices(result.data.services as ServiceWithProvider[])
+        setTotalServices(result.data.total)
       } catch {
-        // ignored
+        setLoadError(true)
       } finally {
         setIsLoading(false)
       }
     }
+    void fetchServices()
+  }, [queryReady, debouncedSearch, selectedCategory, sortBy, currentPage, reloadKey])
 
-    fetchServices()
-  }, [])
+  useEffect(() => {
+    if (!queryReady) return
+    const params = new URLSearchParams()
+    if (debouncedSearch) params.set("q", debouncedSearch)
+    if (selectedCategory !== "all") params.set("category", selectedCategory)
+    if (sortBy !== "newest") params.set("sort", sortBy)
+    if (currentPage > 1) params.set("page", String(currentPage))
+    const query = params.toString()
+    router.replace(query ? `/services/seeker?${query}` : "/services/seeker", { scroll: false })
+  }, [queryReady, debouncedSearch, selectedCategory, sortBy, currentPage, router])
 
   useEffect(() => {
     async function checkUser() {
       const supabase = createClient()
-      const { data } = await supabase.auth.getUser()
+      const { data,error } = await supabase.auth.getUser()
       setUser(data.user)
+      setAuthUnavailable(Boolean(error))
     }
     checkUser()
   }, [])
 
-  const filteredServices = useMemo(() => {
-    const result = services
-      .filter((service) => {
-        const matchesCategory = selectedCategory === "all" || service.category === selectedCategory
-        const name = language === "ar" ? service.name_ar : service.name_en
-        const desc = language === "ar" ? service.description_ar : service.description_en
-        const matchesSearch =
-          searchQuery === "" ||
-          name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (desc && desc.toLowerCase().includes(searchQuery.toLowerCase()))
-        return matchesCategory && matchesSearch
-      })
-      .sort((a, b) => {
-        if (sortBy === "price-low") return a.price - b.price
-        if (sortBy === "price-high") return b.price - a.price
-        if (sortBy === "rating") return (b.providers?.rating || 0) - (a.providers?.rating || 0)
-        return 0
-      })
-    setCurrentPage(1)
-    return result
-  }, [services, selectedCategory, searchQuery, sortBy, language])
-
-  const totalPages = Math.max(1, Math.ceil(filteredServices.length / PAGE_SIZE))
-  const paginatedServices = filteredServices.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+  const totalPages = Math.max(1, Math.ceil(totalServices / PAGE_SIZE))
 
   const handleContactProvider = async (providerId: string) => {
+    if(authUnavailable){toast({title:t("تعذر التحقق من الجلسة","Could not verify your session"),description:t("يرجى المحاولة مرة أخرى","Please try again"),variant:"destructive"});return}
     if (!user) {
-      router.push("/auth/login")
+      router.push(`/auth/login?next=${encodeURIComponent(`/messages?provider=${providerId}`)}`)
       return
     }
     router.push(`/messages?provider=${providerId}`)
@@ -175,13 +194,13 @@ export default function TaskSeekerPage() {
 
               {/* Search Bar */}
               <div className="relative max-w-2xl mx-auto">
-                <Search className="absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                <Search className="absolute start-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <Input
                   type="text"
                   placeholder={t("ابحث عن خدمة...", "Search for a service...")}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="h-14 pr-12 pl-4 text-lg"
+                  className="h-14 ps-12 pe-4 text-lg"
                 />
               </div>
             </div>
@@ -197,7 +216,7 @@ export default function TaskSeekerPage() {
                 <Button
                   key={cat.id}
                   variant={selectedCategory === cat.id ? "default" : "outline"}
-                  onClick={() => setSelectedCategory(cat.id)}
+                  onClick={() => { setSelectedCategory(cat.id); setCurrentPage(1) }}
                   className={selectedCategory === cat.id ? "bg-primary" : ""}
                 >
                   {t(cat.nameAr, cat.nameEn)}
@@ -208,7 +227,7 @@ export default function TaskSeekerPage() {
             {/* Sort and Filter Bar */}
             <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
               <div className="text-muted-foreground">
-                {filteredServices.length} {t("خدمة متاحة", "services available")}
+                {totalServices} {t("خدمة متاحة", "services available")}
               </div>
 
               <div className="flex gap-3">
@@ -220,16 +239,16 @@ export default function TaskSeekerPage() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => setSortBy("newest")}>
+                    <DropdownMenuItem onClick={() => { setSortBy("newest"); setCurrentPage(1) }}>
                       {t("الأحدث", "Newest")}
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setSortBy("rating")}>
+                    <DropdownMenuItem onClick={() => { setSortBy("rating"); setCurrentPage(1) }}>
                       {t("الأعلى تقييماً", "Highest Rated")}
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setSortBy("price-low")}>
+                    <DropdownMenuItem onClick={() => { setSortBy("price-low"); setCurrentPage(1) }}>
                       {t("السعر: من الأقل للأعلى", "Price: Low to High")}
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setSortBy("price-high")}>
+                    <DropdownMenuItem onClick={() => { setSortBy("price-high"); setCurrentPage(1) }}>
                       {t("السعر: من الأعلى للأقل", "Price: High to Low")}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -242,10 +261,18 @@ export default function TaskSeekerPage() {
                 <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
                 <p className="mt-4 text-muted-foreground">{t("جاري التحميل...", "Loading...")}</p>
               </div>
+            ) : loadError ? (
+              <div className="text-center py-20">
+                <Filter className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-xl font-semibold mb-2">{t("تعذر تحميل الخدمات", "Could not load services")}</h3>
+                <Button variant="outline" onClick={() => setReloadKey((value) => value + 1)}>
+                  {t("إعادة المحاولة", "Try Again")}
+                </Button>
+              </div>
             ) : (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  {paginatedServices.map((service) => {
+                  {services.map((service) => {
                     const name = language === "ar" ? service.name_ar : service.name_en
                     const desc = language === "ar" ? service.description_ar : service.description_en
                     const providerName = language === "ar" ? service.providers?.name_ar : service.providers?.name_en
@@ -317,7 +344,7 @@ export default function TaskSeekerPage() {
                             <span className="text-2xl font-bold text-primary">
                               {service.price}
                             </span>
-                            <span className="text-sm text-muted-foreground ml-1">
+                            <span className="text-sm text-muted-foreground ms-1">
                               {t("ر.س", "SAR")}
                             </span>
                           </div>
@@ -410,7 +437,7 @@ export default function TaskSeekerPage() {
                   </div>
                 )}
 
-                {filteredServices.length === 0 && (
+                {services.length === 0 && (
                   <div className="text-center py-20">
                     <Filter className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
                     <h3 className="text-xl font-semibold mb-2">{t("لا توجد نتائج", "No results found")}</h3>

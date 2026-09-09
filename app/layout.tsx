@@ -4,6 +4,8 @@ import { Cairo } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { LanguageProvider } from "@/components/language-provider"
 import { GlobalCustomerServiceLoader } from "@/components/global-customer-service-loader"
+import { Toaster } from "@/components/ui/toaster"
+import { ThemeProvider } from "@/components/theme-provider"
 import "./globals.css"
 
 const cairo = Cairo({
@@ -41,12 +43,15 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="ar" dir="rtl">
+    <html lang="ar" dir="rtl" suppressHydrationWarning>
       <body className={`${cairo.className} font-sans antialiased`}>
-        <LanguageProvider>
-          {children}
-          <GlobalCustomerServiceLoader />
-        </LanguageProvider>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+          <LanguageProvider>
+            {children}
+            <GlobalCustomerServiceLoader />
+            <Toaster />
+          </LanguageProvider>
+        </ThemeProvider>
         <Analytics />
       </body>
     </html>

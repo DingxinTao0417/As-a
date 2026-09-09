@@ -1,12 +1,14 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { createClient } from "@/lib/supabase/client"
 import { useLanguage } from "@/components/language-provider"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Briefcase, ShieldCheck, Wallet, ClipboardList, Users, AlertCircle } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Briefcase, ShieldCheck, Wallet, ClipboardList, Users, AlertCircle, Undo2, Scale } from "lucide-react"
 import Link from "next/link"
+import { getAdminOperationsSummary, getAdminServicePage } from "@/app/actions/operations"
+import { useToast } from "@/hooks/use-toast"
 
 type Stats = {
   pendingServices: number
@@ -14,6 +16,9 @@ type Stats = {
   pendingWithdrawals: number
   totalOrders: number
   totalUsers: number
+  openRefunds: number
+  openDisputes: number
+  paymentExceptions: number
 }
 
 type RecentService = {
@@ -31,45 +36,39 @@ export default function AdminOverviewPage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [recentServices, setRecentServices] = useState<RecentService[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [servicesUnavailable, setServicesUnavailable] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
+  const { toast } = useToast()
 
   useEffect(() => {
     async function fetchData() {
-      const supabase = createClient()
-
-      const [
-        { count: pendingServices },
-        { count: unverifiedProviders },
-        { count: pendingWithdrawals },
-        { count: totalOrders },
-        { count: totalUsers },
-        { data: services },
-      ] = await Promise.all([
-        supabase.from("services").select("id", { count: "exact", head: true }).eq("is_active", false),
-        supabase.from("providers").select("id", { count: "exact", head: true }).eq("is_verified", false),
-        supabase.from("withdrawal_requests").select("id", { count: "exact", head: true }).eq("status", "pending"),
-        supabase.from("orders").select("id", { count: "exact", head: true }),
-        supabase.from("profiles").select("id", { count: "exact", head: true }),
-        supabase
-          .from("services")
-          .select("id, name_ar, name_en, category, is_active, created_at, providers(name_ar, name_en)")
-          .eq("is_active", false)
-          .order("created_at", { ascending: false })
-          .limit(5),
+      setLoading(true)
+      setLoadError(null)
+      const [summaryResult,servicesResult] = await Promise.all([
+        getAdminOperationsSummary(),
+        getAdminServicePage("","pending_review",null,5),
       ])
 
+      if(!summaryResult.success){setLoadError(summaryResult.error);toast({title:t("تعذر تحميل ملخص العمليات","Could not load operations summary"),description:summaryResult.error,variant:"destructive"});setLoading(false);return}
+      const summary=summaryResult.data.summary
       setStats({
-        pendingServices: pendingServices || 0,
-        unverifiedProviders: unverifiedProviders || 0,
-        pendingWithdrawals: pendingWithdrawals || 0,
-        totalOrders: totalOrders || 0,
-        totalUsers: totalUsers || 0,
+        pendingServices:Number(summary.pending_services||0),
+        unverifiedProviders:Number(summary.unverified_providers||0),
+        pendingWithdrawals:Number(summary.pending_withdrawals||0),
+        totalOrders:Number(summary.total_orders||0),
+        totalUsers:Number(summary.total_users||0),
+        openRefunds:Number(summary.open_refunds||0),
+        openDisputes:Number(summary.open_disputes||0),
+        paymentExceptions:Number(summary.payment_exceptions||0),
       })
-      setRecentServices((services as RecentService[]) || [])
+      if(!servicesResult.success){setServicesUnavailable(true);toast({title:t("تعذر تحميل أحدث الخدمات","Could not load latest services"),variant:"destructive"})}
+      else {setRecentServices(servicesResult.data.services as RecentService[]);setServicesUnavailable(false)}
       setLoading(false)
     }
 
     fetchData()
-  }, [])
+  }, [reloadKey])
 
   const statCards = [
     {
@@ -79,6 +78,9 @@ export default function AdminOverviewPage() {
       href: "/admin/services",
       urgent: (stats?.pendingServices || 0) > 0,
     },
+    { label:t("استردادات مفتوحة","Open Refunds"),value:stats?.openRefunds,icon:Undo2,href:"/admin/refunds",urgent:(stats?.openRefunds||0)>0 },
+    { label:t("نزاعات مفتوحة","Open Disputes"),value:stats?.openDisputes,icon:Scale,href:"/admin/disputes",urgent:(stats?.openDisputes||0)>0 },
+    { label:t("استثناءات الدفع","Payment Exceptions"),value:stats?.paymentExceptions,icon:AlertCircle,href:"/admin/payments",urgent:(stats?.paymentExceptions||0)>0 },
     {
       label: t("مقدمو خدمة غير موثقين", "Unverified Providers"),
       value: stats?.unverifiedProviders,
@@ -115,6 +117,15 @@ export default function AdminOverviewPage() {
         <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent" />
       </div>
     )
+  }
+
+  if(loadError){
+    return <Card className="mx-auto max-w-lg p-8 text-center" role="alert">
+      <AlertCircle className="mx-auto mb-3 h-10 w-10 text-destructive" />
+      <h1 className="text-xl font-semibold">{t("تعذر تحميل ملخص العمليات","Could not load operations summary")}</h1>
+      <p className="mt-2 text-sm text-muted-foreground">{loadError}</p>
+      <Button className="mt-4" onClick={()=>setReloadKey((key)=>key+1)}>{t("إعادة المحاولة","Retry")}</Button>
+    </Card>
   }
 
   return (
@@ -162,7 +173,12 @@ export default function AdminOverviewPage() {
         <h2 className="text-lg font-semibold mb-4">
           {t("آخر الخدمات المعلقة", "Latest Pending Services")}
         </h2>
-        {recentServices.length === 0 ? (
+        {servicesUnavailable ? (
+          <Card className="p-8 text-center" role="alert">
+            <p className="text-destructive">{t("تعذر تحميل أحدث الخدمات","Could not load latest services")}</p>
+            <Button variant="outline" size="sm" className="mt-3" onClick={()=>setReloadKey((key)=>key+1)}>{t("إعادة المحاولة","Retry")}</Button>
+          </Card>
+        ) : recentServices.length === 0 ? (
           <Card className="p-8 text-center text-muted-foreground">
             {t("لا توجد خدمات معلقة", "No pending services")}
           </Card>

@@ -12,7 +12,7 @@ export default function PrivacyPage() {
       <Header />
       <main className="container mx-auto max-w-4xl px-4 py-12 flex-1 space-y-10" dir="rtl">
         <section className="space-y-4">
-          <p className="text-sm text-muted-foreground">آخر تحديث: 2026-04-24</p>
+          <p className="text-sm text-muted-foreground">آخر تحديث: 2026-09-08</p>
           <h1 className="text-3xl font-bold">سياسة الخصوصية</h1>
           <p className="text-muted-foreground leading-8">
             توضح هذه السياسة كيف تجمع منصة أسعى وتستخدم وتحمي بياناتك الشخصية وفق متطلبات نظام حماية البيانات الشخصية في المملكة العربية السعودية. هذه صفحة إرشادية ويجب مراجعتها قانونياً قبل الإطلاق العام.
@@ -21,12 +21,12 @@ export default function PrivacyPage() {
 
         <section className="space-y-3">
           <h2 className="text-xl font-semibold">هوية المتحكم وبيانات التواصل</h2>
-          <p className="leading-8">المتحكم في البيانات هو منصة أسعى للخدمات المهنية. للاستفسارات أو طلبات الخصوصية: <a className="underline" href="mailto:support@asa.sa">support@asa.sa</a>.</p>
+          <p className="leading-8">المتحكم المقترح في البيانات هو منصة أسعى للخدمات المهنية. تتوفر حالياً طلبات تصدير البيانات وحذف الحساب من صفحة الملف الشخصي. ستنشر هوية الكيان وقناة التواصل الرسمية بعد اعتمادهما وقبل الإطلاق العام.</p>
         </section>
 
         <section className="space-y-3">
           <h2 className="text-xl font-semibold">البيانات التي نجمعها</h2>
-          <ul className="list-disc pr-6 space-y-2 leading-8">
+          <ul className="list-disc ps-6 space-y-2 leading-8">
             <li>بيانات الحساب مثل الاسم، البريد الإلكتروني، رقم الهاتف، نوع المستخدم، والصورة الشخصية.</li>
             <li>بيانات الخدمات والطلبات والمحادثات والتقييمات والمفضلات.</li>
             <li>بيانات الدفع اللازمة للمعالجة عبر مزود الدفع، ولا نخزن بيانات البطاقة الكاملة.</li>
@@ -56,7 +56,7 @@ export default function PrivacyPage() {
 
         <section className="space-y-4 border-t pt-8" dir="ltr">
           <h2 className="text-2xl font-bold">Privacy Policy Summary</h2>
-          <p className="leading-7">As'aa collects account, contact, order, payment-processing, support, analytics, and technical data to provide the marketplace, process payments, secure the platform, provide customer support, and comply with law. We may share data with payment processors, Supabase/Vercel hosting and database providers, monitoring vendors such as Sentry if enabled, and authorities where required. Users may request access, correction, deletion, restriction, objection, and portability by contacting <a className="underline" href="mailto:support@asa.sa">support@asa.sa</a>.</p>
+          <p className="leading-7">As'aa collects account, contact, order, payment-processing, support, analytics, and technical data to provide and secure the marketplace and comply with applicable requirements. We may share necessary data with configured infrastructure, payment, monitoring, and legal recipients. Data export and account-deletion requests are currently available from the profile page. Legal controller details and an official contact channel will be published before public launch.</p>
           <p><Link className="underline" href="/terms">Terms of Service</Link></p>
         </section>
       </main>

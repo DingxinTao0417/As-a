@@ -2,15 +2,25 @@
   "name": "my-v0-project",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.19.0 <21 || >=22.13.0 <23 || >=24"
+  },
   "scripts": {
     "build": "next build",
+    "check:boundaries": "node scripts/check-client-boundaries.mjs",
     "dev": "next dev",
     "lint": "eslint .",
+    "lint:db": "supabase db lint --local --schema public --level warning --fail-on warning",
     "start": "next start",
+    "supabase:start": "sh scripts/start-supabase-local.sh",
+    "supabase:stop": "supabase stop",
     "test": "vitest run",
+    "test:db": "node scripts/test-database.mjs",
+    "test:supabase": "node scripts/test-supabase-integration.mjs",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "test:e2e:supabase": "node scripts/test-supabase-browser.mjs",
     "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
@@ -68,6 +78,7 @@
     "zod": "3.25.76"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
     "@next/bundle-analyzer": "^16.2.4",
     "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4.1.9",

@@ -20,67 +20,23 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
   Send,
-  Pencil,
   FileCheck,
   ThumbsUp,
   Zap,
   Clock,
-  Shield,
   User,
+  AlertCircle,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { getServiceReviews } from "@/app/actions/reviews"
+import {
+  getPublicServiceDetail,
+  type PublicServiceDetail,
+  type RelatedPublicService,
+} from "@/app/actions/catalog"
 
 // --- Types ---
-type ServiceWithProvider = {
-  id: string
-  name_ar: string
-  name_en: string
-  description_ar: string | null
-  description_en: string | null
-  category: string
-  price: number
-  price_type: string
-  delivery_time: string | null
-  features: string[]
-  image_urls: string[]
-  is_active: boolean
-  provider_id: string
-  created_at: string
-  providers: {
-    id: string
-    name_ar: string
-    name_en: string
-    title_ar: string
-    title_en: string
-    avatar_url: string | null
-    rating: number
-    reviews_count: number
-    completed_projects: number
-    is_verified: boolean
-    bio_ar: string | null
-    bio_en: string | null
-    response_time: string | null
-  }
-}
-
-type RelatedService = {
-  id: string
-  name_ar: string
-  name_en: string
-  category: string
-  price: number
-  price_type: string
-  provider_id: string
-  providers: {
-    name_ar: string
-    name_en: string
-    avatar_url: string | null
-    rating: number
-  }
-}
-
 type Review = {
   id: string
   rating: number
@@ -96,29 +52,10 @@ type Review = {
 
 // --- Placeholder Portfolio Images ---
 const PLACEHOLDER_IMAGES = [
-  "https://placehold.co/800x500/1a1a2e/e0e0e0?text=Service+Image",
+  "/placeholder.svg",
 ]
 
 
-
-// --- FAQ Accordion Item ---
-function FAQItem({ question, answer }: { question: string; answer: string }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="border-b last:border-b-0">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between py-4 px-1 text-start font-medium hover:text-primary transition-colors cursor-pointer"
-      >
-        <span>{question}</span>
-        <ChevronDown className={`h-4 w-4 text-muted-foreground flex-shrink-0 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
-      </button>
-      <div className={`overflow-hidden transition-all duration-200 ${open ? "max-h-40 pb-4" : "max-h-0"}`}>
-        <p className="text-sm text-muted-foreground px-1 leading-relaxed">{answer}</p>
-      </div>
-    </div>
-  )
-}
 
 // --- Star Rating ---
 function StarRating({ rating, size = "h-4 w-4" }: { rating: number; size?: string }) {
@@ -139,11 +76,19 @@ export default function ServiceDetailPage() {
   const { t, language } = useLanguage()
   const params = useParams()
   const router = useRouter()
-  const [service, setService] = useState<ServiceWithProvider | null>(null)
-  const [relatedServices, setRelatedServices] = useState<RelatedService[]>([])
+  const [service, setService] = useState<PublicServiceDetail | null>(null)
+  const [relatedServices, setRelatedServices] = useState<RelatedPublicService[]>([])
   const [reviews, setReviews] = useState<Review[]>([])
+  const [reviewSummary, setReviewSummary] = useState({ total: 0, average: 0, counts: [0, 0, 0, 0, 0] })
+  const [reviewCursor, setReviewCursor] = useState<{ createdAt: string; id: string } | null>(null)
+  const [loadingMoreReviews, setLoadingMoreReviews] = useState(false)
+  const [reviewLoadError, setReviewLoadError] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [serviceUnavailable, setServiceUnavailable] = useState(false)
+  const [serviceLoadError, setServiceLoadError] = useState<string | null>(null)
+  const [serviceLoadAttempt, setServiceLoadAttempt] = useState(0)
   const [user, setUser] = useState<any>(null)
+  const [authUnavailable, setAuthUnavailable] = useState(false)
   const [activeImage, setActiveImage] = useState(0)
   const thumbsRef = useRef<HTMLDivElement>(null)
 
@@ -161,73 +106,88 @@ export default function ServiceDetailPage() {
     async function fetchService() {
       const supabase = createClient()
       setIsLoading(true)
+      setServiceUnavailable(false)
+      setServiceLoadError(null)
 
-      const { data: userData } = await supabase.auth.getUser()
+      const { data: userData,error:authError } = await supabase.auth.getUser()
       setUser(userData.user)
+      setAuthUnavailable(Boolean(authError))
 
-      const { data, error } = await supabase
-        .from("services")
-        .select(`
-          *,
-          providers (
-            id, name_ar, name_en, title_ar, title_en, avatar_url,
-            rating, reviews_count, completed_projects, is_verified,
-            bio_ar, bio_en, response_time
-          )
-        `)
-        .eq("id", params.id)
-        .single()
-
-      if (error || !data) {
-        router.push("/services/seeker")
+      const detailResult=await getPublicServiceDetail(String(params.id))
+      if(!detailResult.success){
+        setServiceLoadError(detailResult.error)
+        setIsLoading(false)
         return
       }
+      if(!detailResult.data.service){
+        setServiceUnavailable(true);setIsLoading(false);return
+      }
+      const loadedService=detailResult.data.service
+      setService(loadedService)
+      setRelatedServices(detailResult.data.relatedServices)
 
-      setService(data as ServiceWithProvider)
-
-      // Fetch related services (same category, exclude current)
-      const { data: related } = await supabase
-        .from("services")
-        .select(`
-          id, name_ar, name_en, category, price, price_type, provider_id,
-          providers ( name_ar, name_en, avatar_url, rating )
-        `)
-        .eq("category", data.category)
-        .eq("is_active", true)
-        .neq("id", data.id)
-        .limit(4)
-
-      setRelatedServices((related as RelatedService[]) || [])
-
-      // Fetch reviews for this service
-      const { data: reviewsData } = await supabase
-        .from("reviews")
-        .select(`
-          id, rating, comment, created_at, service_name, reviewer_id,
-          profiles ( full_name, avatar_url )
-        `)
-        .eq("service_id", data.id)
-        .order("created_at", { ascending: false })
-        .limit(10)
-
-      setReviews((reviewsData as Review[]) || [])
+      const reviewResult = await getServiceReviews(loadedService.id)
+      if (reviewResult.success) {
+        setReviewLoadError(false)
+        setReviews(reviewResult.data.reviews as Review[])
+        setReviewSummary(reviewResult.data.summary)
+        setReviewCursor(reviewResult.data.nextCursor)
+      } else {
+        setReviewLoadError(true)
+        setReviews([])
+        setReviewSummary({ total: 0, average: 0, counts: [0, 0, 0, 0, 0] })
+        setReviewCursor(null)
+      }
 
       setIsLoading(false)
     }
 
     fetchService()
-  }, [params.id, router])
+  }, [params.id, router,serviceLoadAttempt])
 
   const handleContact = () => {
-    if (!user) { router.push("/auth/login"); return }
+    if(authUnavailable){showToast({title:t("تعذر التحقق من الجلسة","Could not verify your session"),description:t("يرجى المحاولة مرة أخرى","Please try again"),variant:"destructive"});return}
+    if (!user) {
+      router.push(`/auth/login?next=${encodeURIComponent(`/messages?provider=${service?.provider_id}`)}`)
+      return
+    }
     router.push(`/messages?provider=${service?.provider_id}`)
   }
 
   const { toast: showToast } = useToast()
 
+  const loadMoreReviews = async () => {
+    if (!service || !reviewCursor || loadingMoreReviews) return
+    setLoadingMoreReviews(true)
+    try {
+      const result = await getServiceReviews(service.id, reviewCursor)
+      if (!result.success) {
+        showToast({ title: t("تعذر تحميل المزيد من التقييمات", "Could not load more reviews"), description: result.error, variant: "destructive" })
+        return
+      }
+      setReviews((current) => {
+        const existing = new Set(current.map((review) => review.id))
+        return [...current, ...(result.data.reviews as Review[]).filter((review) => !existing.has(review.id))]
+      })
+      setReviewCursor(result.data.nextCursor)
+    } catch {
+      showToast({ title: t("تعذر تحميل المزيد من التقييمات", "Could not load more reviews"), description: t("يرجى المحاولة مرة أخرى", "Please try again"), variant: "destructive" })
+    } finally {
+      setLoadingMoreReviews(false)
+    }
+  }
+
   const handleOrderNow = async () => {
-    if (!user) { router.push("/auth/login"); return }
+    if(authUnavailable){showToast({title:t("تعذر التحقق من الجلسة","Could not verify your session"),description:t("يرجى المحاولة مرة أخرى","Please try again"),variant:"destructive"});return}
+    if (!user) {
+      router.push(`/auth/login?next=${encodeURIComponent(`/services/${service?.id || params.id}`)}`)
+      return
+    }
     if (!service) return
+    if (service.price_type !== "fixed") {
+      handleContact()
+      return
+    }
 
     setIsOrdering(true)
     try {
@@ -256,7 +216,7 @@ export default function ServiceDetailPage() {
     }
   }
 
-  if (isLoading || !service) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex flex-col">
         <Header />
@@ -268,11 +228,37 @@ export default function ServiceDetailPage() {
     )
   }
 
+  if (serviceUnavailable || serviceLoadError || !service) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header />
+        <main className="flex-1 flex items-center justify-center px-4">
+          <div className="max-w-md text-center" role="alert">
+            <AlertCircle className="mx-auto mb-4 h-12 w-12 text-destructive" />
+            <h1 className="text-xl font-semibold">
+              {serviceUnavailable ? t("الخدمة غير متاحة","Service unavailable") : t("تعذر تحميل الخدمة","Could not load service")}
+            </h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {serviceUnavailable
+                ? t("قد تكون الخدمة متوقفة أو محذوفة أو غير منشورة","The service may be paused, removed, or unpublished")
+                : serviceLoadError}
+            </p>
+            <div className="mt-4 flex justify-center gap-2">
+              {!serviceUnavailable && <Button onClick={() => setServiceLoadAttempt((attempt) => attempt + 1)}>{t("إعادة المحاولة","Retry")}</Button>}
+              <Button variant="outline" onClick={() => router.push("/services/seeker")}>{t("تصفح الخدمات","Browse Services")}</Button>
+            </div>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    )
+  }
+
   const name = language === "ar" ? service.name_ar : service.name_en
   const desc = language === "ar" ? service.description_ar : service.description_en
   const providerName = language === "ar" ? service.providers?.name_ar : service.providers?.name_en
   const providerTitle = language === "ar" ? service.providers?.title_ar : service.providers?.title_en
-  const providerRating = service.providers?.rating || 5.0
+  const providerRating = service.providers?.rating || 0
   const providerReviews = service.providers?.reviews_count || 0
 
   // Use real images if available, else fall back to placeholder
@@ -289,35 +275,11 @@ export default function ServiceDetailPage() {
     }
   }
 
-  const faqItems = [
-    {
-      q: t("ماذا يحدث إذا لم أكن راضياً عن النتيجة؟", "What happens if I'm not satisfied with the result?"),
-      a: t("يمكنك طلب مراجعات مجانية ضمن الباقة. إذا لم تكن راضياً بعد المراجعات، يمكنك التواصل مع الدعم.", "You can request free revisions within the package. If still unsatisfied after revisions, you can contact support."),
-    },
-    {
-      q: t("ما المعلومات التي أحتاج لتقديمها؟", "What information do I need to provide?"),
-      a: t("اسم العلامة التجارية، الشعار إن وجد، الألوان المفضلة، و2-3 أمثلة لأعمال تعجبك.", "Brand name, slogan if any, preferred colors, and 2-3 examples of designs you like."),
-    },
-    {
-      q: t("كم يستغرق الحصول على أول تصميم؟", "How long to get the first draft?"),
-      a: t("عادة خلال 24-48 ساعة من تقديم المتطلبات.", "Usually within 24-48 hours of submitting requirements."),
-    },
-    {
-      q: t("هل يمكنك التصميم بأنماط محددة؟", "Can you design in specific styles?"),
-      a: t("نعم، أعمل بجميع الأنماط: مينيمالست، كلاسيكي، عصري، وغيرها. شارك أمثلة وسأتكيف معها.", "Yes, I work in all styles: minimalist, classic, modern, and more. Share examples and I'll adapt."),
-    },
-  ]
-
   const workflowSteps = [
-    { icon: Send, title: t("تقديم المتطلبات", "Submit Requirements"), desc: t("ملء استبيان قصير عن مشروعك", "Fill a brief questionnaire about your project") },
-    { icon: Pencil, title: t("استلام المسودة", "Receive Draft"), desc: t("استلام المقترحات الأولية خلال الوقت المحدد", "Receive initial concepts within the agreed time") },
-    { icon: FileCheck, title: t("المراجعة والتعديل", "Review & Revise"), desc: t("إرسال ملاحظاتك للحصول على النسخة المثالية", "Provide feedback to get the perfect version") },
-    { icon: ThumbsUp, title: t("الاستلام النهائي", "Final Delivery"), desc: t("استلام الملفات النهائية وتقييم الخدمة", "Get final files and rate the service") },
-  ]
-
-  const tags = [
-    "Minimalist", "Modern", "Logo Design", "Figma", "Illustrator",
-    "Brand Identity", "Arabic", "Custom", "SVG",
+    { icon: MessageCircle, title: t("ناقش المتطلبات", "Discuss Requirements"), desc: t("شارك النطاق والنتيجة المطلوبة عبر الرسائل", "Share the scope and expected result in messages") },
+    { icon: FileCheck, title: t("أكد الطلب", "Confirm the Order"), desc: t("راجع التفاصيل والسعر قبل الدفع", "Review the details and price before payment") },
+    { icon: Send, title: t("استلم التسليم", "Receive Delivery"), desc: t("يرسل مقدم الخدمة العمل عبر المحادثة", "The provider submits the work through the conversation") },
+    { icon: ThumbsUp, title: t("أكد الاستلام", "Approve Delivery"), desc: t("أكد الاستلام ثم أضف تقييمك", "Approve the delivery and then leave a review") },
   ]
 
   return (
@@ -368,12 +330,16 @@ export default function ServiceDetailPage() {
                   {galleryImages.length > 1 && (
                     <>
                       <button
+                        type="button"
+                        aria-label={t("الصورة السابقة", "Previous image")}
                         onClick={() => setActiveImage((prev) => (prev === 0 ? galleryImages.length - 1 : prev - 1))}
                         className="absolute left-3 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full bg-background/80 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg cursor-pointer hover:bg-background"
                       >
                         <ChevronLeft className="h-5 w-5" />
                       </button>
                       <button
+                        type="button"
+                        aria-label={t("الصورة التالية", "Next image")}
                         onClick={() => setActiveImage((prev) => (prev === galleryImages.length - 1 ? 0 : prev + 1))}
                         className="absolute right-3 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full bg-background/80 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg cursor-pointer hover:bg-background"
                       >
@@ -385,6 +351,9 @@ export default function ServiceDetailPage() {
                         {galleryImages.map((_, idx) => (
                           <button
                             key={idx}
+                            type="button"
+                            aria-label={`${t("عرض الصورة", "View image")} ${idx+1}`}
+                            aria-current={activeImage===idx?"true":undefined}
                             onClick={() => setActiveImage(idx)}
                             className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
                               activeImage === idx ? "w-4 bg-white" : "w-1.5 bg-white/50 hover:bg-white/80"
@@ -402,6 +371,9 @@ export default function ServiceDetailPage() {
                     {galleryImages.map((img, idx) => (
                       <button
                         key={idx}
+                        type="button"
+                        aria-label={`${t("عرض الصورة", "View image")} ${idx+1}`}
+                        aria-current={activeImage===idx?"true":undefined}
                         onClick={() => setActiveImage(idx)}
                         className={`relative rounded-lg overflow-hidden h-16 w-24 flex-shrink-0 cursor-pointer transition-all duration-200 ${
                           activeImage === idx ? "ring-2 ring-primary ring-offset-2" : "opacity-60 hover:opacity-100"
@@ -452,7 +424,7 @@ export default function ServiceDetailPage() {
                           <div className="h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
                             <Icon className="h-6 w-6 text-primary" />
                           </div>
-                          <span className="absolute -top-1 -right-1 h-6 w-6 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center">
+                          <span className="absolute -top-1 -end-1 h-6 w-6 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center">
                             {idx + 1}
                           </span>
                         </div>
@@ -464,16 +436,6 @@ export default function ServiceDetailPage() {
                 </div>
               </Card>
 
-              {/* FAQ */}
-              <Card className="p-6 shadow-sm">
-                <h2 className="text-xl font-bold mb-2">{t("الأسئلة الشائعة", "Frequently Asked Questions")}</h2>
-                <div className="divide-y-0">
-                  {faqItems.map((item, idx) => (
-                    <FAQItem key={idx} question={item.q} answer={item.a} />
-                  ))}
-                </div>
-              </Card>
-
               {/* Ordering Requirements */}
               <Card className="p-6 shadow-sm border-primary/20">
                 <h2 className="text-xl font-bold mb-4">{t("متطلبات الطلب", "Ordering Requirements")}</h2>
@@ -482,10 +444,9 @@ export default function ServiceDetailPage() {
                 </p>
                 <ul className="space-y-2">
                   {[
-                    t("اسم العلامة التجارية والشعار (إن وجد)", "Brand name and slogan (if any)"),
-                    t("الألوان المفضلة أو الهوية البصرية الحالية", "Preferred colors or existing brand guidelines"),
-                    t("2-3 أمثلة لتصاميم تعجبك", "2-3 examples of designs you like"),
-                    t("وصف مختصر لطبيعة العمل والجمهور المستهدف", "Brief description of your business and target audience"),
+                    t("الهدف والنتيجة التي تتوقع استلامها", "Your goal and the result you expect to receive"),
+                    t("الملفات أو المعلومات التي سيحتاجها مقدم الخدمة", "Files or information the provider will need"),
+                    t("الموعد المطلوب وأي قيود مهمة", "Your target date and any important constraints"),
                   ].map((item, idx) => (
                     <li key={idx} className="flex items-start gap-2 text-sm">
                       <span className="h-5 w-5 rounded-full bg-secondary/10 text-secondary flex items-center justify-center flex-shrink-0 text-xs font-bold mt-0.5">
@@ -513,7 +474,7 @@ export default function ServiceDetailPage() {
                       </AvatarFallback>
                     </Avatar>
                     {service.providers?.is_verified && (
-                      <div className="absolute -bottom-0.5 -right-0.5 bg-background rounded-full p-0.5">
+                      <div className="absolute -bottom-0.5 -end-0.5 bg-background rounded-full p-0.5">
                         <CheckCircle2 className="h-5 w-5 text-primary" />
                       </div>
                     )}
@@ -523,29 +484,33 @@ export default function ServiceDetailPage() {
                     <p className="text-xs text-muted-foreground mt-0.5">{providerTitle}</p>
                   </div>
                   <StarRating rating={Math.round(providerRating)} />
-                  <span className="text-sm text-muted-foreground">{providerRating.toFixed(1)} ({providerReviews} {t("مراجعة", "reviews")})</span>
+                  <span className="text-sm text-muted-foreground">
+                    {providerReviews > 0
+                      ? `${providerRating.toFixed(1)} (${providerReviews} ${t("مراجعة", "reviews")})`
+                      : t("لا توجد مراجعات بعد", "No reviews yet")}
+                  </span>
 
                   {/* Seller Stats */}
                   <div className="w-full space-y-2 pt-3 border-t text-sm">
                     <div className="flex items-center justify-between">
                       <span className="flex items-center gap-1.5 text-muted-foreground"><Zap className="h-3.5 w-3.5" />{t("وقت الرد", "Response Time")}</span>
-                      <span className="font-medium">{service.providers?.response_time || t("خلال ساعة", "Within 1 hr")}</span>
+                      <span className="font-medium">{service.providers?.response_time || t("غير محدد", "Not provided")}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="flex items-center gap-1.5 text-muted-foreground"><FileCheck className="h-3.5 w-3.5" />{t("طلبات منجزة", "Orders Done")}</span>
                       <span className="font-medium">{service.providers?.completed_projects || 0}</span>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-1.5 text-muted-foreground"><Clock className="h-3.5 w-3.5" />{t("آخر تسليم", "Last Delivery")}</span>
-                      <span className="font-medium">{t("يوم واحد", "1 day ago")}</span>
-                    </div>
                   </div>
 
                   {/* Verification Badges */}
-                  <div className="flex flex-wrap gap-1.5 pt-2">
-                    <Badge variant="secondary" className="gap-1 text-xs"><Shield className="h-3 w-3" />{t("هوية موثقة", "ID Verified")}</Badge>
-                    <Badge variant="secondary" className="gap-1 text-xs"><Star className="h-3 w-3" />{t("بائع محترف", "Pro Seller")}</Badge>
-                  </div>
+                  {service.providers?.is_verified && (
+                    <div className="flex flex-wrap gap-1.5 pt-2">
+                      <Badge variant="secondary" className="gap-1 text-xs">
+                        <CheckCircle2 className="h-3 w-3" />
+                        {t("هوية موثقة", "ID Verified")}
+                      </Badge>
+                    </div>
+                  )}
 
                   <div className="w-full space-y-2 pt-2">
                     <Button className="w-full gap-2" onClick={handleContact}>
@@ -588,32 +553,27 @@ export default function ServiceDetailPage() {
                     size="lg"
                     className="w-full gap-2 text-base font-semibold mt-2"
                     onClick={handleOrderNow}
-                    disabled={isOrdering}
+                    disabled={service.price_type === "fixed" && isOrdering}
                   >
-                    {isOrdering ? (
+                    {service.price_type === "fixed" && isOrdering ? (
                       <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
                     ) : (
                       <>
-                        {t("اطلب الآن", "Order Now")} ({service.price} {t("ر.س", "SAR")})
+                        {service.price_type === "fixed"
+                          ? `${t("اطلب الآن", "Order Now")} (${service.price} ${t("ر.س", "SAR")})`
+                          : t("اطلب عرض سعر", "Request a Quote")}
                         <ArrowRight className="h-4 w-4" />
                       </>
                     )}
                   </Button>
-                  <p className="text-xs text-center text-muted-foreground">{t("لن يتم الخصم إلا بعد موافقتك", "You won't be charged until you approve")}</p>
+                  <p className="text-xs text-center text-muted-foreground">
+                    {service.price_type === "fixed"
+                      ? t("لن يتم الخصم إلا بعد موافقتك", "You won't be charged until you approve")
+                      : t("اتفق على النطاق والسعر النهائي مع مقدم الخدمة أولاً", "Agree on scope and a final price with the provider first")}
+                  </p>
                 </div>
               </Card>
 
-              {/* Tags Cloud */}
-              <Card className="p-5 shadow-sm">
-                <h3 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">{t("كلمات مفتاحية", "Tags")}</h3>
-                <div className="flex flex-wrap gap-1.5">
-                  {tags.map((tag) => (
-                    <Badge key={tag} variant="outline" className="text-xs cursor-pointer hover:bg-muted transition-colors">
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
-              </Card>
             </div>
           </div>
 
@@ -622,12 +582,12 @@ export default function ServiceDetailPage() {
           {/* Reviews Section */}
           {(() => {
             const displayReviews = reviews
-            const totalReviews = displayReviews.length
-            const avgRating = totalReviews > 0 ? displayReviews.reduce((sum, r) => sum + r.rating, 0) / totalReviews : 0
+            const totalReviews = reviewSummary.total
+            const avgRating = reviewSummary.average
             const ratingCounts = [5, 4, 3, 2, 1].map((star) => ({
               star,
-              count: displayReviews.filter((r) => r.rating === star).length,
-              pct: totalReviews > 0 ? Math.round((displayReviews.filter((r) => r.rating === star).length / totalReviews) * 100) : 0,
+              count: reviewSummary.counts[5 - star] || 0,
+              pct: totalReviews > 0 ? Math.round(((reviewSummary.counts[5 - star] || 0) / totalReviews) * 100) : 0,
             }))
 
             const formatDate = (dateStr: string) => {
@@ -637,6 +597,28 @@ export default function ServiceDetailPage() {
               if (days < 7) return t(`قبل ${days} أيام`, `${days} days ago`)
               if (days < 30) return t(`قبل ${Math.floor(days / 7)} أسابيع`, `${Math.floor(days / 7)} weeks ago`)
               return t(`قبل ${Math.floor(days / 30)} أشهر`, `${Math.floor(days / 30)} months ago`)
+            }
+
+            if (reviewLoadError) {
+              return (
+                <div className="mt-12 pt-10 border-t">
+                  <h2 className="text-2xl font-bold mb-6">{t("آراء العملاء", "What Clients Are Saying")}</h2>
+                  <Card className="p-8 text-center text-destructive">
+                    {t("تعذر تحميل التقييمات حالياً", "Reviews could not be loaded right now")}
+                  </Card>
+                </div>
+              )
+            }
+
+            if (totalReviews === 0) {
+              return (
+                <div className="mt-12 pt-10 border-t">
+                  <h2 className="text-2xl font-bold mb-6">{t("آراء العملاء", "What Clients Are Saying")}</h2>
+                  <Card className="p-8 text-center text-muted-foreground">
+                    {t("لا توجد مراجعات لهذه الخدمة بعد", "This service has no reviews yet")}
+                  </Card>
+                </div>
+              )
             }
 
             return (
@@ -700,6 +682,11 @@ export default function ServiceDetailPage() {
                         </Card>
                       )
                     })}
+                    {reviewCursor && (
+                      <Button variant="outline" className="w-full" onClick={loadMoreReviews} disabled={loadingMoreReviews}>
+                        {loadingMoreReviews ? t("جاري التحميل...", "Loading...") : t("تحميل المزيد من التقييمات", "Load More Reviews")}
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>

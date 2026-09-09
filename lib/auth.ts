@@ -1,4 +1,5 @@
 import { createServerClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 
 export class AuthError extends Error {
   code: string
@@ -21,12 +22,25 @@ export async function requireAuth() {
     throw new AuthError("Not logged in", "UNAUTHENTICATED")
   }
 
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("deletion_requested_at, suspended_at")
+    .eq("id", user.id)
+    .maybeSingle()
+  if (profileError || !profile) {
+    throw new AuthError("Account service is unavailable", "ACCOUNT_UNAVAILABLE")
+  }
+  if (profile.deletion_requested_at || profile.suspended_at) {
+    await supabase.auth.signOut()
+    throw new AuthError("Account is suspended or unavailable", "ACCOUNT_DISABLED")
+  }
+
   return { user, supabase }
 }
 
 export async function requireProvider() {
   const { user, supabase } = await requireAuth()
-  const { data: provider, error } = await supabase
+  const { data: provider, error } = await createAdminClient()
     .from("providers")
     .select("*")
     .eq("user_id", user.id)
@@ -37,4 +51,19 @@ export async function requireProvider() {
   }
 
   return { user, supabase, provider }
+}
+
+export async function requireAdmin() {
+  const { user, supabase } = await requireAuth()
+  const { data: profile, error } = await supabase
+    .from("profiles")
+    .select("is_admin")
+    .eq("id", user.id)
+    .maybeSingle()
+
+  if (error || !profile?.is_admin) {
+    throw new AuthError("Administrator access required", "ADMIN_REQUIRED")
+  }
+
+  return { user, supabase }
 }

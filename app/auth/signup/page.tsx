@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useLanguage } from "@/components/language-provider"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -25,9 +25,14 @@ export default function SignupPage() {
   const [role, setRole] = useState<"seeker" | "provider">("seeker")
   const [agreedToTerms, setAgreedToTerms] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
   const { language, isRTL } = useLanguage()
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("role") === "provider") setRole("provider")
+  }, [])
 
   const content = {
     ar: {
@@ -80,7 +85,7 @@ export default function SignupPage() {
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
-    const supabase = createClient()
+    if (isLoading || success) return
     setIsLoading(true)
     setError(null)
 
@@ -97,21 +102,33 @@ export default function SignupPage() {
     }
 
     try {
-      const { error } = await supabase.auth.signUp({
-        email,
+      if (!fullName.trim() || password.length < 8) {
+        setError(language === "ar" ? "أدخل اسمك وكلمة مرور من 8 أحرف على الأقل." : "Enter your name and a password of at least 8 characters.")
+        return
+      }
+      const supabase = createClient()
+      const destination = role === "provider" ? "/register/provider" : "/"
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
         password,
         options: {
-          emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}`,
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(destination)}`,
           data: {
-            full_name: fullName,
+            full_name: fullName.trim(),
             role: role,
           },
         },
       })
       if (error) throw error
 
-      setError(t.success)
-      router.push("/auth/login")
+      if (data.session) {
+        router.replace(destination)
+        router.refresh()
+      } else {
+        setSuccess(true)
+        setPassword("")
+        setRepeatPassword("")
+      }
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "An error occurred")
     } finally {
@@ -130,12 +147,20 @@ export default function SignupPage() {
             <CardDescription>{t.description}</CardDescription>
           </CardHeader>
           <CardContent>
+            {success ? (
+              <div className="space-y-4">
+                <p role="status" className="text-sm">{t.success}</p>
+                <Button asChild className="w-full"><Link href="/auth/login">{t.login}</Link></Button>
+              </div>
+            ) : (
             <form onSubmit={handleSignup}>
               <div className="flex flex-col gap-6">
                 <div className="grid gap-2">
                   <Label htmlFor="fullName">{t.fullName}</Label>
                   <Input
                     id="fullName"
+                    autoComplete="name"
+                    maxLength={100}
                     type="text"
                     placeholder={t.fullNamePlaceholder}
                     required
@@ -147,6 +172,7 @@ export default function SignupPage() {
                   <Label htmlFor="email">{t.email}</Label>
                   <Input
                     id="email"
+                    autoComplete="email"
                     type="email"
                     placeholder={t.emailPlaceholder}
                     required
@@ -159,6 +185,9 @@ export default function SignupPage() {
                   <Input
                     id="password"
                     type="password"
+                    autoComplete="new-password"
+                    minLength={8}
+                    maxLength={128}
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -168,7 +197,7 @@ export default function SignupPage() {
                       <div className="flex gap-1">
                         {[1, 2, 3, 4].map((level) => {
                           const strength = [
-                            password.length >= 6,
+                            password.length >= 8,
                             /[A-Z]/.test(password),
                             /[0-9]/.test(password),
                             /[^A-Za-z0-9]/.test(password),
@@ -187,7 +216,7 @@ export default function SignupPage() {
                       </div>
                       <p className="text-xs text-muted-foreground">
                         {(() => {
-                          const s = [password.length >= 6, /[A-Z]/.test(password), /[0-9]/.test(password), /[^A-Za-z0-9]/.test(password)].filter(Boolean).length
+                          const s = [password.length >= 8, /[A-Z]/.test(password), /[0-9]/.test(password), /[^A-Za-z0-9]/.test(password)].filter(Boolean).length
                           if (s <= 1) return language === "ar" ? "ضعيفة" : "Weak"
                           if (s === 2) return language === "ar" ? "متوسطة" : "Fair"
                           if (s === 3) return language === "ar" ? "جيدة" : "Good"
@@ -202,6 +231,9 @@ export default function SignupPage() {
                   <Input
                     id="repeat-password"
                     type="password"
+                    autoComplete="new-password"
+                    minLength={8}
+                    maxLength={128}
                     required
                     value={repeatPassword}
                     onChange={(e) => setRepeatPassword(e.target.value)}
@@ -238,7 +270,7 @@ export default function SignupPage() {
                   </RadioGroup>
                 </div>
 
-                {error && <p className="text-sm text-red-500">{error}</p>}
+                {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
                 <div className="flex items-start gap-2">
                   <Checkbox
                     id="terms"
@@ -270,6 +302,7 @@ export default function SignupPage() {
                 </Link>
               </div>
             </form>
+            )}
           </CardContent>
         </Card>
       </div>

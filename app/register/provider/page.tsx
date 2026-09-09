@@ -14,6 +14,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { User, Briefcase, DollarSign, Tag, X, Plus, ArrowRight, CheckCircle2 } from "lucide-react"
+import { getCurrentProviderContext, registerProviderProfile } from "@/app/actions/providers"
+import { LoadErrorCard } from "@/components/load-error-card"
 
 export default function BecomeProviderPage() {
   const { t, language } = useLanguage()
@@ -21,6 +23,8 @@ export default function BecomeProviderPage() {
   const { toast } = useToast()
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [step, setStep] = useState(1)
 
@@ -53,24 +57,33 @@ export default function BecomeProviderPage() {
 
   useEffect(() => {
     const checkUser = async () => {
+      setLoading(true)
+      setLoadError(null)
       const supabase = createClient()
       const {
         data: { user },
+        error:authError,
       } = await supabase.auth.getUser()
 
+      if(authError){setLoadError(t("تعذر التحقق من الجلسة","Could not verify your session"));setLoading(false);return}
       if (!user) {
         router.push("/auth/signup")
         return
       }
 
-      // Check if user is already a provider
-      const { data: existingProvider } = await supabase
-        .from("providers")
-        .select("id")
-        .eq("user_id", user.id)
-        .single()
+      const contextResult=await getCurrentProviderContext()
+      if(!contextResult.success){
+        setLoadError(t("تعذر التحقق من الحساب","Could not check your account"))
+        toast({
+          title: t("تعذر التحقق من الحساب", "Could not check your account"),
+          description: t("يرجى المحاولة مرة أخرى", "Please try again"),
+          variant: "destructive",
+        })
+        setLoading(false)
+        return
+      }
 
-      if (existingProvider) {
+      if (contextResult.data.provider) {
         // User is already a provider, redirect to dashboard
         toast({
           title: t("أنت مقدم خدمة بالفعل", "You are already a provider"),
@@ -80,15 +93,8 @@ export default function BecomeProviderPage() {
         return
       }
 
-      // Check user's role - seeker users cannot become providers
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .single()
-
       // If user is a seeker, they cannot register as a provider
-      if (!profile || profile.role === "seeker") {
+      if (contextResult.data.role === "seeker") {
         toast({
           title: t("غير مسموح", "Not Allowed"),
           description: t(
@@ -111,7 +117,7 @@ export default function BecomeProviderPage() {
     }
 
     checkUser()
-  }, [router, toast, t])
+  }, [router, toast, t,reloadKey])
 
   const addSkill = () => {
     if (skillInput.trim() && !skills.includes(skillInput.trim())) {
@@ -175,12 +181,12 @@ export default function BecomeProviderPage() {
 
     if (formData.starting_price) {
       const price = Number.parseFloat(formData.starting_price)
-      if (price > 99999999) {
+      if (!Number.isFinite(price) || price < 0 || price > 10000 || Math.round(price * 100) / 100 !== price) {
         toast({
           title: t("خطأ", "Error"),
           description: t(
-            "السعر الابتدائي لا يمكن أن يتجاوز 99,999,999 ريال",
-            "Starting price cannot exceed 99,999,999 SAR",
+            "السعر يجب أن يكون بين 0 و10,000 وبحد أقصى منزلتين عشريتين",
+            "Price must be between 0 and 10,000 with at most two decimal places",
           ),
           variant: "destructive",
         })
@@ -219,52 +225,26 @@ export default function BecomeProviderPage() {
     setSubmitting(true)
 
     try {
-      const supabase = createClient()
-
-      const providerData = {        user_id: user.id,
-        name_ar: formData.name_ar,
-        name_en: formData.name_en,
-        title_ar: formData.title_ar,
-        title_en: formData.title_en,
-        bio_ar: formData.bio_ar || null,
-        bio_en: formData.bio_en || null,
-        avatar_url:
-          formData.avatar_url || `/placeholder.svg?height=200&width=200&text=${encodeURIComponent(formData.name_en)}`,
-        rating: 0,
-        reviews_count: 0,
-        completed_projects: 0,
-        starting_price: Number.parseFloat(formData.starting_price) || null,
-        skills: skills,
+      const result = await registerProviderProfile({
+        nameAr: formData.name_ar,
+        nameEn: formData.name_en,
+        titleAr: formData.title_ar,
+        titleEn: formData.title_en,
+        bioAr: formData.bio_ar,
+        bioEn: formData.bio_en,
+        startingPrice: Number.parseFloat(formData.starting_price) || 0,
+        skills,
         categories: selectedCategories,
-        is_verified: false,
-        display_name: formData.name_en,
-        title: formData.title_en,
-        bio: formData.bio_en || null,
-        category: selectedCategories[0] || "تطوير",
-        hourly_rate: Number.parseFloat(formData.starting_price) || 0,
-      }
-
-
-      const result = await supabase.from("providers").insert(providerData).select().single()
-
-
-      if (result.error) {
-        throw result.error
-      }
-
-
-      // Update user's profile role to "provider"
-      await supabase
-        .from("profiles")
-        .update({ role: "provider" })
-        .eq("id", user.id)
+        avatarUrl: formData.avatar_url || "/placeholder.svg",
+      })
+      if (!result.success) throw new Error(result.error)
 
       toast({
         title: t("تم بنجاح!", "Success!"),
         description: t("تم إنشاء ملفك كمقدم خدمة بنجاح", "Your provider profile has been created successfully"),
       })
 
-      router.push("/services/seeker")
+      router.push("/dashboard")
     } catch (error: any) {
       toast({
         title: t("حدث خطأ", "Error"),
@@ -272,6 +252,7 @@ export default function BecomeProviderPage() {
           error.message || t("فشل إنشاء الملف، يرجى المحاولة مرة أخرى", "Failed to create profile, please try again"),
         variant: "destructive",
       })
+    } finally {
       setSubmitting(false)
     }
   }
@@ -282,6 +263,10 @@ export default function BecomeProviderPage() {
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
       </div>
     )
+  }
+
+  if(loadError){
+    return <div className="min-h-screen flex flex-col"><Header /><main className="flex-1 flex items-center justify-center px-4"><LoadErrorCard title={t("تعذر فتح تسجيل مقدم الخدمة","Could not open provider registration")} description={loadError} retryLabel={t("إعادة المحاولة","Retry")} onRetry={()=>setReloadKey((key)=>key+1)} /></main><Footer /></div>
   }
 
   return (
@@ -438,7 +423,7 @@ export default function BecomeProviderPage() {
                       onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addSkill())}
                       placeholder={t("مثال: React، تصميم UI/UX", "Example: React, UI/UX Design")}
                     />
-                    <Button type="button" onClick={addSkill} size="icon" variant="outline">
+                    <Button type="button" onClick={addSkill} size="icon" variant="outline" aria-label={t("إضافة مهارة", "Add skill")}>
                       <Plus className="h-4 w-4" />
                     </Button>
                   </div>
@@ -446,10 +431,9 @@ export default function BecomeProviderPage() {
                     {skills.map((skill, idx) => (
                       <Badge key={idx} variant="secondary" className="gap-1">
                         {skill}
-                        <X
-                          className="h-3 w-3 cursor-pointer hover:text-destructive"
-                          onClick={() => removeSkill(skill)}
-                        />
+                        <button type="button" aria-label={`${t("إزالة", "Remove")} ${skill}`} onClick={() => removeSkill(skill)}>
+                          <X className="h-3 w-3 cursor-pointer hover:text-destructive" />
+                        </button>
                       </Badge>
                     ))}
                   </div>

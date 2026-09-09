@@ -1,12 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { createClient } from "@/lib/supabase/client"
+import { useEffect, useRef, useState } from "react"
 import { useLanguage } from "@/components/language-provider"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Dialog,
   DialogContent,
@@ -14,74 +14,97 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Search, CheckCircle, XCircle, Eye, DollarSign, Clock } from "lucide-react"
+import { reviewService } from "@/app/actions/admin"
+import { useToast } from "@/hooks/use-toast"
+import { LoadErrorCard } from "@/components/load-error-card"
+import {
+  getAdminServicePage,
+  type AdminServiceCursor,
+  type AdminServiceFilter,
+  type AdminServiceRow,
+} from "@/app/actions/operations"
 
-type ServiceRow = {
-  id: string
-  name_ar: string
-  name_en: string
-  description_ar: string | null
-  description_en: string | null
-  category: string
-  price: number
-  price_type: string
-  delivery_time: string | null
-  is_active: boolean
-  image_urls: string[]
-  features: string[]
-  created_at: string
-  providers: {
-    name_ar: string
-    name_en: string
-    avatar_url: string | null
-  } | null
-}
-
-const filterOptions = ["all", "active", "inactive"] as const
-type Filter = typeof filterOptions[number]
+const filterOptions:AdminServiceFilter[] = ["pending_review", "approved", "rejected", "suspended", "draft", "all"]
 
 export default function AdminServicesPage() {
   const { t, language } = useLanguage()
-  const [services, setServices] = useState<ServiceRow[]>([])
+  const { toast } = useToast()
+  const [services, setServices] = useState<AdminServiceRow[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<Filter>("all")
+  const [loadingMore,setLoadingMore]=useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [filter, setFilter] = useState<AdminServiceFilter>("pending_review")
   const [search, setSearch] = useState("")
-  const [preview, setPreview] = useState<ServiceRow | null>(null)
+  const [cursor,setCursor]=useState<AdminServiceCursor|null>(null)
+  const [total,setTotal]=useState(0)
+  const [pendingCount,setPendingCount]=useState(0)
+  const requestVersion=useRef(0)
+  const [preview, setPreview] = useState<AdminServiceRow | null>(null)
   const [toggling, setToggling] = useState<string | null>(null)
+  const [reviewNote, setReviewNote] = useState("")
 
-  async function fetchServices() {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from("services")
-      .select("*, providers(name_ar, name_en, avatar_url)")
-      .order("created_at", { ascending: false })
-    setServices((data as ServiceRow[]) || [])
-    setLoading(false)
+  const moderationStatus = (service: AdminServiceRow) => service.moderation_status || (service.is_active ? "approved" : "draft")
+
+  async function fetchServices(pageCursor:AdminServiceCursor|null=null,append=false) {
+    const version=append?requestVersion.current:++requestVersion.current
+    if(append)setLoadingMore(true);else{setLoading(true);setLoadingMore(false);setLoadError(null)}
+    const result=await getAdminServicePage(search,filter,pageCursor)
+    if(version!==requestVersion.current)return
+    if (!result.success) {
+      if(!append)setLoadError(result.error)
+      toast({title:t("تعذر تحميل الخدمات","Could not load services"),description:result.error,variant:"destructive"})
+    }else{
+      setServices((current)=>append?[...current,...result.data.services.filter((service)=>!current.some((item)=>item.id===service.id))]:result.data.services)
+      setCursor(result.data.nextCursor);if(!append||result.data.services.length>0)setTotal(result.data.total)
+      setPendingCount(result.data.pendingCount);setLoadError(null)
+    }
+    if(append)setLoadingMore(false);else setLoading(false)
   }
 
-  useEffect(() => { fetchServices() }, [])
+  useEffect(()=>{
+    const timeout=window.setTimeout(()=>{void fetchServices()},300)
+    return()=>window.clearTimeout(timeout)
+  },[search,filter])
 
-  const filtered = services.filter((s) => {
-    const matchFilter =
-      filter === "all" ? true : filter === "active" ? s.is_active : !s.is_active
-    const name = language === "ar" ? s.name_ar : s.name_en
-    const matchSearch = search === "" || name.toLowerCase().includes(search.toLowerCase())
-    return matchFilter && matchSearch
-  })
-
-  const handleToggle = async (service: ServiceRow) => {
+  const handleReview = async (
+    service: AdminServiceRow,
+    decision: "approved" | "rejected" | "suspended",
+    note?: string,
+  ) => {
     setToggling(service.id)
-    const supabase = createClient()
-    await supabase.from("services").update({ is_active: !service.is_active }).eq("id", service.id)
-    setServices((prev) =>
-      prev.map((s) => s.id === service.id ? { ...s, is_active: !s.is_active } : s)
-    )
-    setToggling(null)
+    try {
+      const result = await reviewService(service.id, decision, note)
+      if (!result.success) {
+        toast({ title: t("فشل الحفظ", "Save failed"), description: result.error, variant: "destructive" })
+        return false
+      }
+      const isActive = decision === "approved"
+      setPreview((current) => current?.id === service.id
+        ? { ...current, is_active: isActive, moderation_status: decision, moderation_note: note?.trim() || null }
+        : current)
+      toast({ title: t("تم حفظ قرار المراجعة", "Review decision saved") })
+      await fetchServices()
+      return true
+    } finally {
+      setToggling(null)
+    }
   }
 
-  const filterLabels: Record<Filter, [string, string]> = {
+  const filterLabels: Record<AdminServiceFilter, [string, string]> = {
     all: ["الكل", "All"],
-    active: ["مفعّل", "Active"],
-    inactive: ["معلق", "Inactive"],
+    pending_review: ["بانتظار المراجعة", "Pending Review"],
+    approved: ["مقبول", "Approved"],
+    rejected: ["مرفوض", "Rejected"],
+    suspended: ["موقوف", "Suspended"],
+    draft: ["مسودة", "Draft"],
+  }
+
+  const statusClass: Record<AdminServiceRow["moderation_status"], string> = {
+    draft: "bg-muted text-muted-foreground",
+    pending_review: "bg-yellow-100 text-yellow-700 border-yellow-200",
+    approved: "bg-green-100 text-green-700 border-green-200",
+    rejected: "bg-red-100 text-red-700 border-red-200",
+    suspended: "bg-orange-100 text-orange-700 border-orange-200",
   }
 
   if (loading) {
@@ -92,10 +115,12 @@ export default function AdminServicesPage() {
     )
   }
 
+  if(loadError){return <LoadErrorCard title={t("تعذر تحميل الخدمات","Could not load services")} description={loadError} retryLabel={t("إعادة المحاولة","Retry")} onRetry={()=>void fetchServices()} />}
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">{t("مراجعة الخدمات", "Services Review")}</h1>
+        <h1 className="text-2xl font-bold">{t("مراجعة الخدمات", "Services Review")} {pendingCount>0&&<Badge variant="destructive" className="ms-2">{pendingCount} {t("بانتظار المراجعة","pending")}</Badge>}</h1>
         <p className="text-muted-foreground mt-1">
           {t("إدارة وتفعيل خدمات مقدمي الخدمة", "Manage and activate provider services")}
         </p>
@@ -124,6 +149,7 @@ export default function AdminServicesPage() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        <span className="text-sm text-muted-foreground">{services.length} / {total}</span>
       </div>
 
       {/* Table */}
@@ -142,13 +168,13 @@ export default function AdminServicesPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {services.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
                     {t("لا توجد خدمات", "No services found")}
                   </td>
                 </tr>
-              ) : filtered.map((service) => {
+              ) : services.map((service) => {
                 const name = language === "ar" ? service.name_ar : service.name_en
                 const providerName = service.providers
                   ? language === "ar" ? service.providers.name_ar : service.providers.name_en
@@ -181,35 +207,30 @@ export default function AdminServicesPage() {
                       {new Date(service.created_at).toLocaleDateString(language === "ar" ? "ar-SA" : "en-US")}
                     </td>
                     <td className="px-4 py-3">
-                      {service.is_active ? (
-                        <Badge className="bg-green-100 text-green-700 border-green-200">
-                          <CheckCircle className="h-3 w-3 me-1" />
-                          {t("مفعّل", "Active")}
-                        </Badge>
-                      ) : (
-                        <Badge variant="destructive">
-                          <XCircle className="h-3 w-3 me-1" />
-                          {t("معلق", "Inactive")}
-                        </Badge>
-                      )}
+                      <Badge className={statusClass[moderationStatus(service)]}>
+                        {service.is_active ? <CheckCircle className="h-3 w-3 me-1" /> : <XCircle className="h-3 w-3 me-1" />}
+                        {t(...filterLabels[moderationStatus(service)])}
+                      </Badge>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => setPreview(service)}
+                          onClick={() => { setPreview(service); setReviewNote("") }}
                         >
                           <Eye className="h-3.5 w-3.5" />
                         </Button>
-                        <Button
-                          size="sm"
-                          variant={service.is_active ? "destructive" : "default"}
-                          onClick={() => handleToggle(service)}
-                          disabled={toggling === service.id}
-                        >
-                          {service.is_active ? t("تعليق", "Deactivate") : t("تفعيل", "Activate")}
-                        </Button>
+                        {(moderationStatus(service) === "pending_review" || moderationStatus(service) === "suspended" || service.is_active) && (
+                          <Button
+                            size="sm"
+                            variant={service.is_active ? "destructive" : "default"}
+                            onClick={() => handleReview(service, service.is_active ? "suspended" : "approved")}
+                            disabled={toggling === service.id}
+                          >
+                            {service.is_active ? t("إيقاف", "Suspend") : t("قبول", "Approve")}
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -219,9 +240,10 @@ export default function AdminServicesPage() {
           </table>
         </div>
       </Card>
+      {cursor&&services.length<total&&<div className="text-center"><Button variant="outline" onClick={()=>void fetchServices(cursor,true)} disabled={loadingMore}>{loadingMore?t("جاري التحميل...","Loading..."):t("تحميل خدمات أقدم","Load Older Services")}</Button></div>}
 
       {/* Preview Dialog */}
-      <Dialog open={!!preview} onOpenChange={() => setPreview(null)}>
+      <Dialog open={!!preview} onOpenChange={() => { setPreview(null); setReviewNote("") }}>
         {preview && (
           <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
@@ -286,14 +308,62 @@ export default function AdminServicesPage() {
                   </div>
                 </div>
               )}
+              {preview.moderation_note && (
+                <div className="rounded-md bg-muted p-3 text-sm">
+                  <div className="font-medium mb-1">{t("ملاحظة المراجعة", "Review note")}</div>
+                  <p className="text-muted-foreground">{preview.moderation_note}</p>
+                </div>
+              )}
               {/* Action */}
-              <div className="pt-2 border-t flex justify-end">
-                <Button
-                  variant={preview.is_active ? "destructive" : "default"}
-                  onClick={() => { handleToggle(preview); setPreview(null) }}
-                >
-                  {preview.is_active ? t("تعليق الخدمة", "Deactivate Service") : t("تفعيل الخدمة", "Activate Service")}
-                </Button>
+              <div className="pt-3 border-t space-y-3">
+                {moderationStatus(preview) === "pending_review" && (
+                  <Textarea
+                    value={reviewNote}
+                    onChange={(event) => setReviewNote(event.target.value)}
+                    maxLength={1000}
+                    placeholder={t("سبب الرفض أو ملاحظة المراجعة", "Rejection reason or review note")}
+                  />
+                )}
+                <div className="flex justify-end gap-2">
+                  {moderationStatus(preview) === "pending_review" && (
+                    <Button
+                      variant="destructive"
+                      disabled={toggling === preview.id || reviewNote.trim().length < 3}
+                      onClick={async () => {
+                        if (await handleReview(preview, "rejected", reviewNote)) {
+                          setPreview(null); setReviewNote("")
+                        }
+                      }}
+                    >
+                      {t("رفض مع السبب", "Reject with reason")}
+                    </Button>
+                  )}
+                  {(moderationStatus(preview) === "pending_review" || moderationStatus(preview) === "suspended") && (
+                    <Button
+                      disabled={toggling === preview.id}
+                      onClick={async () => {
+                        if (await handleReview(preview, "approved", reviewNote)) {
+                          setPreview(null); setReviewNote("")
+                        }
+                      }}
+                    >
+                      {t("قبول الخدمة", "Approve Service")}
+                    </Button>
+                  )}
+                  {preview.is_active && (
+                    <Button
+                      variant="destructive"
+                      disabled={toggling === preview.id}
+                      onClick={async () => {
+                        if (await handleReview(preview, "suspended", reviewNote)) {
+                          setPreview(null); setReviewNote("")
+                        }
+                      }}
+                    >
+                      {t("إيقاف الخدمة", "Suspend Service")}
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           </DialogContent>

@@ -1,53 +1,38 @@
 "use server"
 
 import { fail, ok } from "@/lib/action-result"
-import { requireAuth } from "@/lib/auth"
+import { AuthError, requireAuth } from "@/lib/auth"
+import { createAdminClient } from "@/lib/supabase/admin"
+import {createUserDataEnvelope,loadUserDataSnapshot} from "@/lib/user-data-export"
+
+type PrivateFile={bucket:string;path:string;signed_url:string;expires_at:string}
 
 export async function exportUserData() {
   try {
-    const { user, supabase } = await requireAuth()
+    const { user } = await requireAuth()
+    const admin=createAdminClient()
+    const {snapshot,privateFiles:references}=await loadUserDataSnapshot(user,admin)
 
-    const [
-      { data: profile },
-      { data: seekerOrders },
-      { data: providerProfiles },
-      { data: sentMessages },
-      { data: reviews },
-      { data: favorites },
-      { data: history },
-    ] = await Promise.all([
-      supabase.from("profiles").select("*").eq("id", user.id).maybeSingle(),
-      supabase.from("orders").select("*").eq("seeker_id", user.id),
-      supabase.from("providers").select("*").eq("user_id", user.id),
-      supabase.from("messages").select("*").eq("sender_id", user.id),
-      supabase.from("reviews").select("*").eq("reviewer_id", user.id),
-      supabase.from("favorites").select("*").eq("user_id", user.id),
-      supabase.from("service_history").select("*").eq("seeker_id", user.id),
-    ])
+    const expiresIn=15*60
+    const expiresAt=new Date(Date.now()+expiresIn*1000).toISOString()
+    const privateFiles:PrivateFile[]=[]
+    const byBucket=new Map<string,string[]>()
+    for(const reference of references)byBucket.set(reference.bucket,[...(byBucket.get(reference.bucket)||[]),reference.path])
+    for(const [bucket,requested] of byBucket){
+      const {data:signed,error:signError}=await admin.storage.from(bucket).createSignedUrls(requested,expiresIn)
+      if(signError||!signed||signed.length!==requested.length)return fail("Private export files could not be prepared")
+      const signedByPath=new Map(signed.map((item)=>[item.path,item]))
+      for(const path of requested){
+        const item=signedByPath.get(path) as {signedUrl?:string;error?:unknown}|undefined
+        if(!item?.signedUrl||item.error)return fail("Private export files could not be prepared")
+        privateFiles.push({bucket,path,signed_url:item.signedUrl,expires_at:expiresAt})
+      }
+    }
 
-    const providerIds = (providerProfiles || []).map((provider: { id: string }) => provider.id)
-    const { data: providerOrders } = providerIds.length > 0
-      ? await supabase.from("orders").select("*").in("provider_id", providerIds)
-      : { data: [] }
-
-    return ok({
-      user: {
-        id: user.id,
-        email: user.email,
-        created_at: user.created_at,
-      },
-      profile,
-      provider_profiles: providerProfiles || [],
-      orders_as_seeker: seekerOrders || [],
-      orders_as_provider: providerOrders || [],
-      messages_sent: sentMessages || [],
-      reviews: reviews || [],
-      favorites: favorites || [],
-      history: history || [],
-      exported_at: new Date().toISOString(),
-    })
+    return ok(createUserDataEnvelope(user,snapshot,{private_file_downloads:privateFiles}))
   } catch (error) {
-    console.error("Failed to export user data", error)
-    return fail("Failed to export data")
+    if (error instanceof AuthError) return fail(error.message)
+    console.error("Failed to export user data", error instanceof Error ? error.name : "UnknownError")
+    return fail("Data export could not be completed")
   }
 }

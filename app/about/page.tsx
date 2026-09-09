@@ -16,22 +16,22 @@ export default function AboutPage() {
       icon: Shield,
       titleAr: "الثقة أولاً",
       titleEn: "Trust First",
-      descAr: "كل محترف على المنصة يمر بعملية تحقق. دفعك محمي حتى تستلم عملك وترضى عنه.",
-      descEn: "Every professional on the platform is verified. Your payment is protected until you receive and approve your work.",
+      descAr: "تعرض الملفات حالة التوثيق الفعلية، وتبقى تفاصيل الطلب والتسليم محفوظة للطرفين.",
+      descEn: "Profiles show their actual verification status, while order and delivery details remain visible to both parties.",
     },
     {
       icon: Zap,
       titleAr: "سرعة الإنجاز",
       titleEn: "Fast Delivery",
-      descAr: "نظام الرسائل المباشر يختصر الوقت. تفاهم مع المحترف وابدأ مشروعك في ساعات لا أيام.",
-      descEn: "Direct messaging cuts out the waiting. Agree with your professional and start your project in hours, not days.",
+      descAr: "تتيح الرسائل المباشرة مناقشة الخدمة وإرسال العروض ومتابعة الطلب في مكان واحد.",
+      descEn: "Direct messaging keeps service discussion, quotes, and order follow-up in one place.",
     },
     {
       icon: Heart,
-      titleAr: "دعم حقيقي",
-      titleEn: "Real Support",
-      descAr: "فريق دعم بشري يرد على استفساراتك ويتابع نزاعاتك حتى حلها. لسنا بوت.",
-      descEn: "A human support team responds to your queries and follows through on disputes until resolved. Not a bot.",
+      titleAr: "مساعدة واضحة",
+      titleEn: "Clear Help",
+      descAr: "يوفر المساعد داخل المنصة إرشادات عامة، ويصرح بوضوح عندما تحتاج المسألة إلى مراجعة يدوية.",
+      descEn: "The in-product assistant provides general guidance and clearly identifies matters that require manual review.",
     },
     {
       icon: Globe,
@@ -43,8 +43,8 @@ export default function AboutPage() {
   ]
 
   const milestones = [
-    { year: "2025", eventAr: "بداية الفكرة وتطوير المنصة", eventEn: "Idea born & platform development begins" },
-    { year: "2026", eventAr: "الإطلاق الرسمي وبدء العمليات التجارية", eventEn: "Official launch & business operations begin" },
+    { year: "2026", eventAr: "تطوير واختبار مسارات الحسابات والخدمات والطلبات", eventEn: "Development and testing of account, service, and order workflows" },
+    { year: t("التالي", "Next"), eventAr: "التحقق في بيئة الاختبار من الدفع والاسترداد والسحب قبل الإطلاق", eventEn: "Validate payments, refunds, and payouts in a sandbox before launch" },
   ]
 
   return (
@@ -92,8 +92,8 @@ export default function AboutPage() {
                 </h2>
                 <p className="text-muted-foreground leading-relaxed mb-4">
                   {t(
-                    "نؤمن أن في كل مدينة سعودية مواهب استثنائية لم تجد بعد المنصة الصحيحة. مهمتنا أن نكون تلك المنصة — بيئة عمل نظيفة وعادلة تحمي الطرفين وتتيح الإنجاز بثقة.",
-                    "We believe every Saudi city holds exceptional talent that hasn't yet found the right platform. Our mission is to be that platform — a clean, fair working environment that protects both parties and enables confident delivery."
+                    "نصمم سوقاً واضحاً للخدمات المحلية يربط ملفات مقدمي الخدمة بالخدمات والرسائل والطلبات والتسليم.",
+                    "We are designing a clear local-services marketplace that connects provider profiles, listings, messages, orders, and delivery."
                   )}
                 </p>
                 <p className="text-muted-foreground leading-relaxed">
@@ -104,13 +104,13 @@ export default function AboutPage() {
                 </p>
               </div>
 
-              {/* Stats block */}
+              {/* Current capabilities */}
               <div className="grid grid-cols-2 gap-4">
                 {[
-                  { numAr: "+٥٠٠٠", numEn: "5,000+", labelAr: "محترف مسجّل", labelEn: "Professionals" },
-                  { numAr: "+١٢٠٠٠", numEn: "12,000+", labelAr: "مشروع مكتمل", labelEn: "Projects done" },
-                  { numAr: "٩٨٪", numEn: "98%", labelAr: "نسبة رضا العملاء", labelEn: "Client satisfaction" },
-                  { numAr: "٢٠+", numEn: "20+", labelAr: "تخصصاً مهنياً", labelEn: "Specialties" },
+                  { numAr: "عربي", numEn: "Arabic", labelAr: "واجهة من اليمين لليسار", labelEn: "Right-to-left interface" },
+                  { numAr: "English", numEn: "English", labelAr: "واجهة ثنائية اللغة", labelEn: "Bilingual interface" },
+                  { numAr: "SAR", numEn: "SAR", labelAr: "عملة الطلبات", labelEn: "Order currency" },
+                  { numAr: "JSON", numEn: "JSON", labelAr: "تصدير بيانات الحساب", labelEn: "Account data export" },
                 ].map((s, i) => (
                   <div key={i} className="bg-background rounded-2xl border border-border p-6">
                     <div className="text-3xl font-bold text-foreground mb-1">{t(s.numAr, s.numEn)}</div>

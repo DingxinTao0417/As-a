@@ -21,101 +21,173 @@ import {
   Shield,
   TrendingUp,
   Clock,
+  Heart,
+  AlertCircle,
 } from "lucide-react"
-
-type Provider = {
-  id: string
-  user_id: string
-  name_ar: string
-  name_en: string
-  title_ar: string
-  title_en: string
-  bio_ar: string | null
-  bio_en: string | null
-  avatar_url: string | null
-  rating: number
-  reviews_count: number
-  completed_projects: number
-  starting_price: number | null
-  skills: string[]
-  categories: string[]
-  is_verified: boolean
-}
-
-type Service = {
-  id: string
-  name_ar: string
-  name_en: string
-  description_ar: string | null
-  description_en: string | null
-  category: string
-  price: number
-  price_type: string
-  delivery_time: string | null
-  features: string[]
-}
+import { useToast } from "@/hooks/use-toast"
+import { getProviderFavoriteStatus, setProviderFavorite } from "@/app/actions/favorites"
+import {
+  getPublicProviderDetail,
+  getPublicProviderServices,
+  type PublicProviderDetail,
+  type PublicProviderService,
+  type PublicProviderServiceCursor,
+} from "@/app/actions/catalog"
 
 export default function ProviderProfilePage() {
   const { t, language } = useLanguage()
   const params = useParams()
   const router = useRouter()
-  const [provider, setProvider] = useState<Provider | null>(null)
-  const [services, setServices] = useState<Service[]>([])
+  const { toast } = useToast()
+  const [provider, setProvider] = useState<PublicProviderDetail | null>(null)
+  const [services, setServices] = useState<PublicProviderService[]>([])
+  const [serviceCursor,setServiceCursor]=useState<PublicProviderServiceCursor|null>(null)
+  const [serviceTotal,setServiceTotal]=useState(0)
+  const [loadingMoreServices,setLoadingMoreServices]=useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [providerUnavailable, setProviderUnavailable] = useState(false)
+  const [providerLoadError, setProviderLoadError] = useState<string | null>(null)
+  const [servicesUnavailable, setServicesUnavailable] = useState(false)
+  const [favoriteUnavailable, setFavoriteUnavailable] = useState(false)
+  const [loadAttempt, setLoadAttempt] = useState(0)
   const [user, setUser] = useState<any>(null)
+  const [authUnavailable, setAuthUnavailable] = useState(false)
+  const [isFavorite, setIsFavorite] = useState(false)
+  const [savingFavorite, setSavingFavorite] = useState(false)
 
   useEffect(() => {
     async function fetchProvider() {
       const supabase = createClient()
       setIsLoading(true)
+      setProviderUnavailable(false)
+      setProviderLoadError(null)
+      setServicesUnavailable(false)
+      setFavoriteUnavailable(false)
 
-      const { data: userData } = await supabase.auth.getUser()
+      const [{ data: userData,error:authError },providerResult] = await Promise.all([
+        supabase.auth.getUser(),
+        getPublicProviderDetail(String(params.id)),
+      ])
       setUser(userData.user)
+      setAuthUnavailable(Boolean(authError))
 
-      const { data, error } = await supabase
-        .from("providers")
-        .select("*")
-        .eq("id", params.id)
-        .single()
-
-      if (error || !data) {
-        console.error("[v0] Error fetching provider:", error)
-        router.push("/services/seeker")
+      if (!providerResult.success) {
+        setProviderLoadError(t("تعذر تحميل مقدم الخدمة. يرجى المحاولة مرة أخرى","Could not load the provider. Please try again"))
+        setIsLoading(false)
+        return
+      }
+      const data=providerResult.data.provider
+      if (!data) {
+        setProviderUnavailable(true)
+        setIsLoading(false)
         return
       }
 
       setProvider(data)
 
-      // Fetch provider's services
-      const { data: servicesData } = await supabase
-        .from("services")
-        .select("*")
-        .eq("provider_id", data.id)
-        .eq("is_active", true)
-        .order("created_at", { ascending: false })
+      if (userData.user) {
+        const favoriteResult=await getProviderFavoriteStatus(data.id)
+        if(!favoriteResult.success){
+          setFavoriteUnavailable(true)
+          toast({ title:t("تعذر تحميل حالة المفضلة","Could not load favorite status"),description:t("يرجى المحاولة مرة أخرى","Please try again"),variant:"destructive" })
+        }else setIsFavorite(favoriteResult.data.favorite)
+      }
 
-      setServices(servicesData || [])
+      const servicesResult=await getPublicProviderServices(data.id)
+      if (!servicesResult.success) {
+        setServicesUnavailable(true)
+        toast({ title: t("تعذر تحميل الخدمات", "Could not load services"), description:servicesResult.error, variant: "destructive" })
+      } else {
+        setServices(servicesResult.data.services)
+        setServiceCursor(servicesResult.data.nextCursor)
+        setServiceTotal(servicesResult.data.total)
+        setServicesUnavailable(false)
+      }
       setIsLoading(false)
     }
 
     fetchProvider()
-  }, [params.id, router])
+  }, [params.id, router,loadAttempt])
+
+  const loadMoreServices=async()=>{
+    if(!provider||!serviceCursor||loadingMoreServices)return
+    setLoadingMoreServices(true)
+    const result=await getPublicProviderServices(provider.id,serviceCursor)
+    if(result.success){
+      setServices((current)=>[...current,...result.data.services.filter((service)=>!current.some((item)=>item.id===service.id))])
+      setServiceCursor(result.data.nextCursor);setServiceTotal(result.data.total);setServicesUnavailable(false)
+    }else{
+      setServicesUnavailable(true)
+      toast({title:t("تعذر تحميل خدمات أقدم","Could not load older services"),description:result.error,variant:"destructive"})
+    }
+    setLoadingMoreServices(false)
+  }
 
   const handleContact = () => {
+    if(authUnavailable){toast({title:t("تعذر التحقق من الجلسة","Could not verify your session"),description:t("يرجى المحاولة مرة أخرى","Please try again"),variant:"destructive"});return}
     if (!user) {
-      router.push("/auth/login")
+      router.push(`/auth/login?next=${encodeURIComponent(`/messages?provider=${provider?.id}`)}`)
       return
     }
     router.push(`/messages?provider=${provider?.id}`)
   }
 
-  if (isLoading || !provider) {
+  const handleFavorite = async () => {
+    if (!provider) return
+    if(authUnavailable){toast({title:t("تعذر التحقق من الجلسة","Could not verify your session"),description:t("يرجى المحاولة مرة أخرى","Please try again"),variant:"destructive"});return}
+    if (!user) {
+      router.push(`/auth/login?next=${encodeURIComponent(`/provider/${provider.id}`)}`)
+      return
+    }
+    setSavingFavorite(true)
+    try {
+      const result = await setProviderFavorite(provider.id, !isFavorite)
+      if (!result.success) {
+        toast({ title: t("فشل الحفظ", "Save failed"), description: result.error, variant: "destructive" })
+        return
+      }
+      setIsFavorite(result.data.favorite)
+      toast({ title: result.data.favorite ? t("تمت الإضافة للمفضلة", "Added to favorites") : t("تمت الإزالة من المفضلة", "Removed from favorites") })
+    } catch {
+      toast({ title: t("فشل الحفظ", "Save failed"), description: t("يرجى المحاولة مرة أخرى", "Please try again"), variant: "destructive" })
+    } finally {
+      setSavingFavorite(false)
+    }
+  }
+
+  if (isLoading) {
     return (
       <div className="min-h-screen flex flex-col">
         <Header />
         <div className="flex-1 flex items-center justify-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
         </div>
+        <Footer />
+      </div>
+    )
+  }
+
+  if (providerUnavailable || providerLoadError || !provider) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header />
+        <main className="flex-1 flex items-center justify-center px-4">
+          <div className="max-w-md text-center" role="alert">
+            <AlertCircle className="mx-auto mb-4 h-12 w-12 text-destructive" />
+            <h1 className="text-xl font-semibold">
+              {providerUnavailable ? t("مقدم الخدمة غير متاح","Provider unavailable") : t("تعذر تحميل مقدم الخدمة","Could not load provider")}
+            </h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {providerUnavailable
+                ? t("قد يكون الحساب متوقفاً أو غير منشور","The account may be paused or unpublished")
+                : providerLoadError}
+            </p>
+            <div className="mt-4 flex justify-center gap-2">
+              {!providerUnavailable && <Button onClick={() => setLoadAttempt((attempt) => attempt + 1)}>{t("إعادة المحاولة","Retry")}</Button>}
+              <Button variant="outline" onClick={() => router.push("/services/seeker")}>{t("تصفح الخدمات","Browse Services")}</Button>
+            </div>
+          </div>
+        </main>
         <Footer />
       </div>
     )
@@ -137,7 +209,7 @@ export default function ProviderProfilePage() {
     { icon: Star, value: provider.rating.toFixed(1), label: t("التقييم", "Rating"), color: "text-yellow-500", bgColor: "bg-yellow-500/10" },
     { icon: Briefcase, value: provider.completed_projects.toString(), label: t("مشروع منجز", "Projects"), color: "text-blue-500", bgColor: "bg-blue-500/10" },
     { icon: TrendingUp, value: provider.reviews_count.toString(), label: t("مراجعة", "Reviews"), color: "text-green-500", bgColor: "bg-green-500/10" },
-    { icon: DollarSign, value: `${services.length}`, label: t("خدمة متاحة", "Services"), color: "text-primary", bgColor: "bg-primary/10" },
+    { icon: DollarSign, value: servicesUnavailable&&services.length===0 ? "—" : `${serviceTotal}`, label: t("خدمة متاحة", "Services"), color: "text-primary", bgColor: "bg-primary/10" },
   ]
 
   const getPriceTypeLabel = (type: string) => {
@@ -179,7 +251,7 @@ export default function ProviderProfilePage() {
                   </AvatarFallback>
                 </Avatar>
                 {provider.is_verified && (
-                  <div className="absolute bottom-1 right-1 bg-white rounded-full p-1.5 shadow-xl">
+                  <div className="absolute bottom-1 end-1 bg-white rounded-full p-1.5 shadow-xl">
                     <CheckCircle2 className="h-7 w-7 text-primary" />
                   </div>
                 )}
@@ -202,14 +274,30 @@ export default function ProviderProfilePage() {
                 </div>
               </div>
 
-              <Button
-                size="lg"
-                onClick={handleContact}
-                className="bg-white text-primary hover:bg-white/90 gap-2 shadow-lg mt-2"
-              >
-                <MessageCircle className="h-5 w-5" />
-                {t("تواصل الآن", "Contact Now")}
-              </Button>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <Button
+                  size="lg"
+                  onClick={handleContact}
+                  className="bg-white text-primary hover:bg-white/90 gap-2 shadow-lg"
+                >
+                  <MessageCircle className="h-5 w-5" />
+                  {t("تواصل الآن", "Contact Now")}
+                </Button>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={handleFavorite}
+                  disabled={savingFavorite || favoriteUnavailable || authUnavailable}
+                  aria-pressed={isFavorite}
+                  title={favoriteUnavailable ? t("حالة المفضلة غير متاحة","Favorite status unavailable") : undefined}
+                  className="gap-2 bg-white/10 text-white border-white/40 hover:bg-white/20 hover:text-white"
+                >
+                  <Heart className={`h-5 w-5 ${isFavorite ? "fill-current" : ""}`} />
+                  {favoriteUnavailable
+                    ? t("المفضلة غير متاحة","Favorite Unavailable")
+                    : isFavorite ? t("في المفضلة", "Favorited") : t("أضف للمفضلة", "Add Favorite")}
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -260,8 +348,15 @@ export default function ProviderProfilePage() {
           )}
 
           {/* Provider's Services */}
-          {services.length > 0 && (
+          {servicesUnavailable&&services.length===0 ? (
+            <Card className="p-6 text-center" role="alert">
+              <AlertCircle className="mx-auto mb-3 h-8 w-8 text-destructive" />
+              <p className="font-medium">{t("تعذر تحميل الخدمات المتاحة","Could not load available services")}</p>
+              <Button variant="outline" size="sm" className="mt-3" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>{t("إعادة المحاولة","Retry")}</Button>
+            </Card>
+          ) : services.length > 0 && (
             <div>
+              {servicesUnavailable&&<Card className="mb-4 p-4 text-sm text-destructive" role="alert">{t("تعذر تحديث الخدمات؛ المعروض هو آخر بيانات ناجحة","Service refresh failed; showing the last successful data")}</Card>}
               <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
                 <Briefcase className="h-5 w-5 text-primary" />
                 {t("الخدمات المتاحة", "Available Services")}
@@ -286,7 +381,7 @@ export default function ProviderProfilePage() {
                           <div className="flex items-center gap-1">
                             <DollarSign className="h-4 w-4 text-primary" />
                             <span className="font-bold text-primary">{svc.price} {t("ر.س", "SAR")}</span>
-                            <span className="text-xs text-muted-foreground ml-1">{getPriceTypeLabel(svc.price_type)}</span>
+                            <span className="text-xs text-muted-foreground ms-1">{getPriceTypeLabel(svc.price_type)}</span>
                           </div>
                           {svc.delivery_time && (
                             <div className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -300,6 +395,7 @@ export default function ProviderProfilePage() {
                   )
                 })}
               </div>
+              {serviceCursor&&services.length<serviceTotal&&<div className="mt-5 text-center"><Button variant="outline" onClick={()=>void loadMoreServices()} disabled={loadingMoreServices}>{loadingMoreServices?t("جاري التحميل...","Loading..."):t("تحميل خدمات أقدم","Load Older Services")}</Button></div>}
             </div>
           )}
 

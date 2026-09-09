@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useLanguage } from "./language-provider"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
@@ -10,12 +10,10 @@ import { Label } from "./ui/label"
 import { Textarea } from "./ui/textarea"
 import { CircleDollarSign, X } from "lucide-react"
 import { createOrder } from "@/app/actions/orders"
-import { calculateFeesWithVAT, formatCurrency, PLATFORM_FEE_PERCENTAGE, VAT_RATE } from "@/lib/tap"
+import { calculateFees, formatCurrency, PLATFORM_FEE_PERCENTAGE } from "@/lib/tap"
 
 interface CreateOrderDialogProps {
   conversationId: string
-  seekerId: string
-  providerId: string
   serviceId?: string
   prefill?: {
     serviceNameAr: string
@@ -30,8 +28,6 @@ interface CreateOrderDialogProps {
 
 export function CreateOrderDialog({
   conversationId,
-  seekerId,
-  providerId,
   serviceId,
   prefill,
   onClose,
@@ -40,6 +36,7 @@ export function CreateOrderDialog({
   const { language, t } = useLanguage()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const quoteRequestId = useRef<string | null>(null)
 
   const [formData, setFormData] = useState({
     serviceNameAr: prefill?.serviceNameAr ?? "",
@@ -51,6 +48,7 @@ export function CreateOrderDialog({
 
   useEffect(() => {
     if (prefill) {
+      quoteRequestId.current = null
       setFormData({
         serviceNameAr: prefill.serviceNameAr,
         serviceNameEn: prefill.serviceNameEn,
@@ -62,7 +60,7 @@ export function CreateOrderDialog({
   }, [prefill])
 
   const amount = Math.round(Number.parseFloat(formData.amount || "0") * 100) / 100
-  const fees = calculateFeesWithVAT(amount)
+  const fees = calculateFees(amount)
 
   const isValidAmount = Number.parseFloat(formData.amount || "0") >= 1 // Minimum 1.00 SAR
   const canSubmit = isValidAmount && formData.serviceNameAr && formData.serviceNameEn && !loading
@@ -82,10 +80,12 @@ export function CreateOrderDialog({
     }
 
     setLoading(true)
+    if (!quoteRequestId.current) quoteRequestId.current = crypto.randomUUID()
 
     try {
       const result = await createOrder({
         conversationId,
+        clientRequestId: quoteRequestId.current,
         serviceNameAr: formData.serviceNameAr,
         serviceNameEn: formData.serviceNameEn,
         serviceDescriptionAr: formData.serviceDescriptionAr,
@@ -97,11 +97,12 @@ export function CreateOrderDialog({
       if (!result.success) {
         setError(result.error)
       } else {
+        quoteRequestId.current = null
         onSuccess()
         onClose()
       }
-    } catch (err) {
-      setError(`Failed to create quote: ${err instanceof Error ? err.message : "Unknown error"}`)
+    } catch {
+      setError(t("تعذر إنشاء عرض السعر. حاول مرة أخرى", "Could not create the quote. Try again"))
     } finally {
       setLoading(false)
     }
@@ -135,7 +136,7 @@ export function CreateOrderDialog({
                 id="service-name-ar"
                 required
                 value={formData.serviceNameAr}
-                onChange={(e) => setFormData({ ...formData, serviceNameAr: e.target.value })}
+                onChange={(e) => {quoteRequestId.current=null;setFormData({ ...formData, serviceNameAr: e.target.value })}}
                 placeholder={language === "ar" ? "أدخل اسم الخدمة بالعربية" : "Enter service name in Arabic"}
               />
             </div>
@@ -148,7 +149,7 @@ export function CreateOrderDialog({
                 id="service-name-en"
                 required
                 value={formData.serviceNameEn}
-                onChange={(e) => setFormData({ ...formData, serviceNameEn: e.target.value })}
+                onChange={(e) => {quoteRequestId.current=null;setFormData({ ...formData, serviceNameEn: e.target.value })}}
                 placeholder={language === "ar" ? "أدخل اسم الخدمة بالإنجليزية" : "Enter service name in English"}
               />
             </div>
@@ -160,7 +161,7 @@ export function CreateOrderDialog({
               <Textarea
                 id="service-description-ar"
                 value={formData.serviceDescriptionAr}
-                onChange={(e) => setFormData({ ...formData, serviceDescriptionAr: e.target.value })}
+                onChange={(e) => {quoteRequestId.current=null;setFormData({ ...formData, serviceDescriptionAr: e.target.value })}}
                 placeholder={language === "ar" ? "أدخل تفاصيل الخدمة بالعربية" : "Enter service details in Arabic"}
                 rows={3}
               />
@@ -173,7 +174,7 @@ export function CreateOrderDialog({
               <Textarea
                 id="service-description-en"
                 value={formData.serviceDescriptionEn}
-                onChange={(e) => setFormData({ ...formData, serviceDescriptionEn: e.target.value })}
+                onChange={(e) => {quoteRequestId.current=null;setFormData({ ...formData, serviceDescriptionEn: e.target.value })}}
                 placeholder={language === "ar" ? "أدخل تفاصيل الخدمة بالإنجليزية" : "Enter service details in English"}
                 rows={3}
               />
@@ -184,7 +185,7 @@ export function CreateOrderDialog({
                 {language === "ar" ? "السعر (ر.س)" : "Price (SAR)"}
               </Label>
               <div className="relative">
-                <CircleDollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                <CircleDollarSign className="absolute start-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <Input
                   id="order-amount"
                   required
@@ -192,9 +193,9 @@ export function CreateOrderDialog({
                   min="1"
                   step="0.01"
                   value={formData.amount}
-                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                  onChange={(e) => {quoteRequestId.current=null;setFormData({ ...formData, amount: e.target.value })}}
                   placeholder="0.00"
-                  className="pl-10"
+                  className="ps-10"
                 />
               </div>
               {!isValidAmount && formData.amount && (
@@ -207,16 +208,8 @@ export function CreateOrderDialog({
             {amount > 0 && (
               <div className="bg-muted p-4 rounded-lg space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span>{language === "ar" ? "المبلغ الأساسي:" : "Base Amount:"}</span>
-                  <span className="font-semibold">{formatCurrency(fees.baseAmount)}</span>
-                </div>
-                <div className="flex justify-between text-muted-foreground">
-                  <span>{language === "ar" ? `ضريبة القيمة المضافة (${VAT_RATE * 100}%):` : `VAT (${VAT_RATE * 100}%):`}</span>
-                  <span>{formatCurrency(fees.vatAmount)}</span>
-                </div>
-                <div className="flex justify-between font-semibold pt-2 border-t">
-                  <span>{language === "ar" ? "الإجمالي شامل الضريبة:" : "Total incl. VAT:"}</span>
-                  <span className="text-primary">{formatCurrency(fees.totalAmount)}</span>
+                  <span>{language === "ar" ? "إجمالي الطلب:" : "Order total:"}</span>
+                  <span className="font-semibold text-primary">{formatCurrency(fees.amount,language)}</span>
                 </div>
                 <div className="flex justify-between text-muted-foreground">
                   <span>
@@ -224,11 +217,11 @@ export function CreateOrderDialog({
                       ? `رسوم المنصة (${PLATFORM_FEE_PERCENTAGE * 100}%):`
                       : `Platform Fee (${PLATFORM_FEE_PERCENTAGE * 100}%):`}
                   </span>
-                  <span>-{formatCurrency(fees.platformFee)}</span>
+                  <span>-{formatCurrency(fees.platformFee,language)}</span>
                 </div>
                 <div className="flex justify-between text-muted-foreground">
                   <span>{language === "ar" ? "سوف تستلم:" : "You will receive:"}</span>
-                  <span>{formatCurrency(fees.providerAmount)}</span>
+                  <span>{formatCurrency(fees.providerAmount,language)}</span>
                 </div>
               </div>
             )}

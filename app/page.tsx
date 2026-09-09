@@ -27,14 +27,21 @@ export default function HomePage() {
   const { t } = useLanguage()
   const [userRole, setUserRole] = useState<string | null>(null) // null = not logged in
   const [roleChecked, setRoleChecked] = useState(false)
+  const [accountContextUnavailable, setAccountContextUnavailable] = useState(false)
 
   useEffect(() => {
     async function checkUser() {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data: { user },error:authError } = await supabase.auth.getUser()
+      if(authError){setAccountContextUnavailable(true);setRoleChecked(true);return}
       if (user) {
-        const role = user.user_metadata?.role || "seeker"
-        setUserRole(role)
+        const { data: profile,error:profileError } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", user.id)
+          .maybeSingle()
+        if(profileError||!profile){setAccountContextUnavailable(true);setRoleChecked(true);return}
+        setUserRole(profile?.role || null)
       }
       setRoleChecked(true)
     }
@@ -46,22 +53,22 @@ export default function HomePage() {
       icon: CheckCircle2,
       titleAr: "الالتزام",
       titleEn: "Commitment",
-      descAr: "نضمن تنفيذ مهامك بأعلى جودة وفي الوقت المحدد",
-      descEn: "Your tasks delivered on time and to the highest standard",
+      descAr: "سجل واضح للطلبات والتسليم وملاحظات التعديل",
+      descEn: "Clear records for orders, delivery, and revision feedback",
     },
     {
       icon: ShieldCheck,
       titleAr: "الاحترافية",
       titleEn: "Professionalism",
-      descAr: "محترفون موثّقون ومعتمدون في تخصصاتهم",
-      descEn: "Verified and certified professionals in their fields",
+      descAr: "تظهر شارة التوثيق فقط بعد مراجعة الإدارة",
+      descEn: "Verification badges appear only after administrator review",
     },
     {
       icon: Star,
       titleAr: "الثقة",
       titleEn: "Trust",
-      descAr: "منصة آمنة تحفظ حقوق جميع الأطراف",
-      descEn: "A secure platform that protects everyone's rights",
+      descAr: "صلاحيات منفصلة للباحث ومقدم الخدمة والإدارة",
+      descEn: "Separate permissions for clients, providers, and administrators",
     },
     {
       icon: TrendingUp,
@@ -84,43 +91,37 @@ export default function HomePage() {
       icon: Code,
       titleAr: "البرمجة والتطوير",
       titleEn: "Development",
-      priceAr: "تبدأ من ٥٠٠ ر.س",
-      priceEn: "From 500 SAR",
+      category: "development",
     },
     {
       icon: Palette,
       titleAr: "التصميم",
       titleEn: "Design",
-      priceAr: "تبدأ من ٣٠٠ ر.س",
-      priceEn: "From 300 SAR",
+      category: "design",
     },
     {
       icon: Megaphone,
       titleAr: "التسويق الرقمي",
       titleEn: "Digital Marketing",
-      priceAr: "تبدأ من ٤٠٠ ر.س",
-      priceEn: "From 400 SAR",
+      category: "marketing",
     },
     {
       icon: Camera,
       titleAr: "التصوير والمونتاج",
       titleEn: "Photo & Video",
-      priceAr: "تبدأ من ٦٠٠ ر.س",
-      priceEn: "From 600 SAR",
+      category: "video",
     },
     {
       icon: FileText,
       titleAr: "الكتابة والترجمة",
       titleEn: "Writing & Translation",
-      priceAr: "تبدأ من ٢٠٠ ر.س",
-      priceEn: "From 200 SAR",
+      category: "writing",
     },
     {
       icon: Briefcase,
       titleAr: "الاستشارات",
       titleEn: "Consulting",
-      priceAr: "تبدأ من ٣٥٠ ر.س",
-      priceEn: "From 350 SAR",
+      category: "consulting",
     },
   ]
 
@@ -143,7 +144,7 @@ export default function HomePage() {
                 )}
               </p>
               <div className={`flex flex-col sm:flex-row gap-4 justify-center items-center transition-opacity duration-300 ${roleChecked ? "opacity-100" : "opacity-0"}`}>
-                {userRole !== "provider" && (
+                {(accountContextUnavailable || userRole !== "provider") && (
                   <Button size="lg" className="bg-primary hover:bg-primary/90 text-lg px-8" asChild>
                     <Link href="/services/seeker">
                       {t("ابحث عن محترف", "Find a Professional")}
@@ -151,7 +152,7 @@ export default function HomePage() {
                     </Link>
                   </Button>
                 )}
-                {userRole !== "seeker" && (
+                {!accountContextUnavailable && userRole !== "seeker" && (
                   <Button size="lg" variant="outline" className="text-lg px-8 bg-transparent" asChild>
                     <Link href={userRole === "provider" ? "/dashboard" : "/services/provider"}>
                       {userRole === "provider"
@@ -161,6 +162,7 @@ export default function HomePage() {
                   </Button>
                 )}
               </div>
+              {roleChecked&&accountContextUnavailable&&<p className="text-sm text-muted-foreground" role="status">{t("اختصارات الحساب غير متاحة مؤقتاً","Account shortcuts are temporarily unavailable")}</p>}
             </div>
           </div>
         </section>
@@ -211,7 +213,7 @@ export default function HomePage() {
               {services.map((service, index) => {
                 const Icon = service.icon
                 return (
-                  <Link key={index} href="/services/seeker">
+                  <Link key={index} href={`/services/seeker?category=${service.category}`}>
                     <Card className="p-6 hover:shadow-lg transition-all hover:scale-105 cursor-pointer">
                       <div className="flex items-start gap-4">
                         <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
@@ -219,7 +221,7 @@ export default function HomePage() {
                         </div>
                         <div className="flex-1">
                           <h3 className="font-semibold text-lg mb-2">{t(service.titleAr, service.titleEn)}</h3>
-                          <p className="text-sm text-primary font-medium">{t(service.priceAr, service.priceEn)}</p>
+                          <p className="text-sm text-primary font-medium">{t("عرض الخدمات المتاحة", "Browse available listings")}</p>
                         </div>
                       </div>
                     </Card>
@@ -257,7 +259,7 @@ export default function HomePage() {
                   </div>
                   <h3 className="text-xl font-semibold">{t("حدّد احتياجك", "Define Your Need")}</h3>
                   <p className="text-muted-foreground">
-                    {t("تصفّح الخدمات أو أنشئ طلبًا واضحًا", "Browse services or post a clear request")}
+                    {t("تصفّح الخدمات المتاحة وحدد ما يناسبك", "Browse available services and choose a suitable listing")}
                   </p>
                 </div>
               </div>
@@ -279,7 +281,7 @@ export default function HomePage() {
                   </div>
                   <h3 className="text-xl font-semibold">{t("استلم النتيجة", "Get Results")}</h3>
                   <p className="text-muted-foreground">
-                    {t("استلم عملك بجودة عالية وادفع بأمان", "Receive quality work and pay securely")}
+                    {t("راجع التسليم واطلب تعديلاً أو أكّد الاستلام", "Review the delivery, request a revision, or confirm receipt")}
                   </p>
                 </div>
               </div>
@@ -288,7 +290,7 @@ export default function HomePage() {
         </section>
 
         {/* CTA Section — only for non-seekers */}
-        {roleChecked && userRole !== "seeker" && (
+        {roleChecked && !accountContextUnavailable && userRole !== "seeker" && (
         <section className="py-16 md:py-24 bg-secondary text-secondary-foreground">
           <div className="container mx-auto px-4">
             <div className="max-w-3xl mx-auto text-center space-y-6">
@@ -301,8 +303,8 @@ export default function HomePage() {
                 {userRole === "provider"
                   ? t("تابع طلباتك وأرباحك من لوحة التحكم", "Track your orders and earnings from the dashboard")
                   : t(
-                      "انضم إلى أسعى وابدأ بتقديم خدماتك لآلاف العملاء في المملكة",
-                      "Join As'a and start offering your services to thousands of clients across Saudi Arabia",
+                      "أنشئ ملف مقدم خدمة وأضف خدماتك لمراجعتها ونشرها في السوق",
+                      "Create a provider profile and submit services for marketplace review",
                     )}
               </p>
               <Button size="lg" className="bg-primary hover:bg-primary/90 text-lg px-8" asChild>

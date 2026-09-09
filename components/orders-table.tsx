@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { useLanguage } from "@/components/language-provider"
-import { completeOrder } from "@/app/actions/orders"
+import { OrderDeliveryDialog } from "@/components/order-delivery-dialog"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -22,16 +22,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import {
   Briefcase,
   Search,
   ArrowUpDown,
@@ -45,8 +35,7 @@ import {
   MessageCircle,
   ReceiptText,
 } from "lucide-react"
-
-import { useToast } from "@/hooks/use-toast"
+import { formatCurrency } from "@/lib/tap"
 
 export interface Order {
   id: string
@@ -63,6 +52,14 @@ export interface Order {
   paid_at: string | null
   completed_at: string | null
   cancelled_at: string | null
+  delivery_version?: number
+  latest_delivery_note?: string | null
+  latest_delivery_links?: string[]
+  latest_delivery_files?: Array<{path:string;name:string;mime:string;size:number}>
+  latest_revision_reason?: string | null
+  refunded_amount?: number
+  refund_status?: string
+  dispute_status?: string
   seeker_id: string
   seeker: {
     full_name: string
@@ -81,6 +78,7 @@ function statusLabel(status: string, t: (ar: string, en: string) => string) {
     case "paid":               return t("مدفوع", "Paid")
     case "completed":          return t("مكتمل", "Completed")
     case "pending":            return t("معلق", "Pending")
+    case "revision_requested": return t("تعديل مطلوب", "Revision Requested")
     case "awaiting_confirmation": return t("بانتظار تأكيد", "Awaiting Confirmation")
     case "cancelled":          return t("ملغي", "Cancelled")
     case "refunded":           return t("مسترد", "Refunded")
@@ -139,19 +137,21 @@ function OrderDetailDialog({
     },
     {
       label: t("العميل", "Client"),
-      value: `${order.seeker.full_name} (${order.seeker.email})`,
+      value: order.seeker.email
+        ? `${order.seeker.full_name} (${order.seeker.email})`
+        : order.seeker.full_name,
     },
     {
       label: t("إجمالي المبلغ", "Total amount"),
-      value: `${Number(order.amount || 0).toFixed(2)} SAR`,
+      value: formatCurrency(Number(order.amount||0),language),
     },
     {
       label: t("رسوم المنصة", "Platform fee"),
-      value: `${Number(order.platform_fee || 0).toFixed(2)} SAR`,
+      value: formatCurrency(Number(order.platform_fee||0),language),
     },
     {
       label: t("صافي ربحك", "Your earnings"),
-      value: `${Number(order.provider_amount || 0).toFixed(2)} SAR`,
+      value: formatCurrency(Number(order.provider_amount||0),language),
     },
     {
       label: t("تاريخ الإنشاء", "Created at"),
@@ -173,9 +173,21 @@ function OrderDetailDialog({
       label: t("الحالة", "Status"),
       value: statusLabel(order.status, t),
     },
+    {
+      label: t("حالة الاسترداد", "Refund status"),
+      value: order.refund_status || "none",
+    },
+    {
+      label: t("المبلغ المسترد", "Refunded amount"),
+      value: formatCurrency(Number(order.refunded_amount||0),language),
+    },
+    {
+      label: t("حالة النزاع", "Dispute status"),
+      value: order.dispute_status || "none",
+    },
   ]
 
-  const canDeliver = order.status === "paid"
+  const canDeliver = order.status === "paid" || order.status === "revision_requested"
   const waitingForPayment = order.status === "pending"
 
   return (
@@ -248,7 +260,6 @@ function OrderDetailDialog({
 export function OrdersTable({ orders: rawOrders, onOrderUpdate }: { orders: Order[]; onOrderUpdate?: () => void | Promise<void> }) {
   const { t, language } = useLanguage()
   const router = useRouter()
-  const { toast } = useToast()
 
   // ── filter / sort state ──
   const [search, setSearch] = useState("")
@@ -266,7 +277,6 @@ export function OrdersTable({ orders: rawOrders, onOrderUpdate }: { orders: Orde
   // ── detail dialog ──
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [deliveryOrderId, setDeliveryOrderId] = useState<string | null>(null)
-  const [delivering, setDelivering] = useState(false)
 
   // ── helpers ──
   const handleSort = (field: SortField) => {
@@ -367,20 +377,6 @@ export function OrdersTable({ orders: rawOrders, onOrderUpdate }: { orders: Orde
     setDeliveryOrderId(orderId)
   }, [])
 
-  const handleComplete = useCallback(async () => {
-    if (!deliveryOrderId || delivering) return
-    setDelivering(true)
-    const result = await completeOrder(deliveryOrderId)
-    if (result.success) {
-      setDeliveryOrderId(null)
-      setSelectedOrder(null)
-      await onOrderUpdate?.()
-    } else {
-      toast({ title: t("خطأ", "Error"), description: result.error, variant: "destructive" })
-    }
-    setDelivering(false)
-  }, [deliveryOrderId, delivering, onOrderUpdate])
-
   // ── page jump ──
   const handleJump = () => {
     const n = parseInt(jumpInput)
@@ -411,12 +407,12 @@ export function OrdersTable({ orders: rawOrders, onOrderUpdate }: { orders: Orde
           <div className="flex flex-wrap gap-3">
             {/* search */}
             <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input
                 placeholder={t("بحث بالاسم أو العميل أو رقم الطلب...", "Search by name, client or order ID...")}
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-                className="pr-9"
+                className="ps-9"
               />
             </div>
 
@@ -429,6 +425,7 @@ export function OrdersTable({ orders: rawOrders, onOrderUpdate }: { orders: Orde
                 <SelectItem value="all">{t("جميع الحالات", "All statuses")}</SelectItem>
                 <SelectItem value="pending">{t("معلق", "Pending")}</SelectItem>
                 <SelectItem value="paid">{t("مدفوع", "Paid")}</SelectItem>
+                <SelectItem value="revision_requested">{t("تعديل مطلوب", "Revision Requested")}</SelectItem>
                 <SelectItem value="awaiting_confirmation">{t("بانتظار تأكيد", "Awaiting Confirmation")}</SelectItem>
                 <SelectItem value="completed">{t("مكتمل", "Completed")}</SelectItem>
                 <SelectItem value="cancelled">{t("ملغي", "Cancelled")}</SelectItem>
@@ -438,7 +435,7 @@ export function OrdersTable({ orders: rawOrders, onOrderUpdate }: { orders: Orde
 
             {/* date from */}
             <div className="relative">
-              <CalendarDays className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <CalendarDays className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input
                 type="text"
                 inputMode="numeric"
@@ -449,13 +446,13 @@ export function OrdersTable({ orders: rawOrders, onOrderUpdate }: { orders: Orde
                   setDateFrom(v)
                   if (v === "" || /^\d{4}-\d{2}-\d{2}$/.test(v)) setPage(1)
                 }}
-                className="pr-9 w-[148px] placeholder:text-muted-foreground/50"
+                className="ps-9 w-[148px] placeholder:text-muted-foreground/50"
               />
             </div>
 
             {/* date to */}
             <div className="relative">
-              <CalendarDays className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <CalendarDays className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input
                 type="text"
                 inputMode="numeric"
@@ -466,13 +463,13 @@ export function OrdersTable({ orders: rawOrders, onOrderUpdate }: { orders: Orde
                   setDateTo(v)
                   if (v === "" || /^\d{4}-\d{2}-\d{2}$/.test(v)) setPage(1)
                 }}
-                className="pr-9 w-[148px] placeholder:text-muted-foreground/50"
+                className="ps-9 w-[148px] placeholder:text-muted-foreground/50"
               />
             </div>
 
             {/* clear */}
             {hasFilters && (
-              <Button variant="ghost" size="icon" onClick={resetFilters} title={t("مسح الفلاتر", "Clear filters")}>
+              <Button variant="ghost" size="icon" onClick={resetFilters} title={t("مسح الفلاتر", "Clear filters")} aria-label={t("مسح الفلاتر", "Clear filters")}>
                 <X className="h-4 w-4" />
               </Button>
             )}
@@ -519,7 +516,7 @@ export function OrdersTable({ orders: rawOrders, onOrderUpdate }: { orders: Orde
           ) : (
             <div className="space-y-3">
               {paginated.map((order) => {
-                const canDeliver = order.status === "paid"
+                const canDeliver = order.status === "paid" || order.status === "revision_requested"
                 const waitingForPayment = order.status === "pending"
                 return (
                   <Card
@@ -551,11 +548,17 @@ export function OrdersTable({ orders: rawOrders, onOrderUpdate }: { orders: Orde
                           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                             <span>{t("العميل:", "Client:")} <span className="text-foreground font-medium">{order.seeker.full_name}</span></span>
                             <span className="font-semibold text-green-600">
-                              {t("ربحك:", "Earning:")} {Number(order.provider_amount || 0).toFixed(2)} SAR
+                              {t("ربحك:", "Earning:")} {formatCurrency(Number(order.provider_amount||0),language)}
                             </span>
                             <span>
                               {new Date(order.created_at).toISOString().slice(0, 10)}
                             </span>
+                            {order.refund_status && order.refund_status !== "none" && (
+                              <span className="text-orange-600">{t("استرداد:", "Refund:")} {order.refund_status}</span>
+                            )}
+                            {order.dispute_status && order.dispute_status !== "none" && (
+                              <span className="text-destructive">{t("نزاع:", "Dispute:")} {order.dispute_status}</span>
+                            )}
                           </div>
                         </div>
 
@@ -691,25 +694,17 @@ export function OrdersTable({ orders: rawOrders, onOrderUpdate }: { orders: Orde
         onChat={handleGoToChat}
       />
 
-      <AlertDialog open={!!deliveryOrderId} onOpenChange={(open) => !open && !delivering && setDeliveryOrderId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("تأكيد تسليم الطلب", "Confirm delivery")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t(
-                "سيتم إرسال الطلب إلى العميل للتأكيد. لا تستخدم هذا الزر إلا بعد تسليم العمل فعلاً.",
-                "This will send the order to the client for confirmation. Only use this after the work has actually been delivered.",
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={delivering}>{t("إلغاء", "Cancel")}</AlertDialogCancel>
-            <AlertDialogAction onClick={(event) => { event.preventDefault(); void handleComplete() }} disabled={delivering}>
-              {delivering ? t("جاري التسليم...", "Delivering...") : t("تأكيد التسليم", "Confirm delivery")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <OrderDeliveryDialog
+        order={deliveryOrderId ? rawOrders.find((order) => order.id === deliveryOrderId) || null : null}
+        role="provider"
+        open={!!deliveryOrderId}
+        onOpenChange={(open) => !open && setDeliveryOrderId(null)}
+        onUpdated={async () => {
+          setDeliveryOrderId(null)
+          setSelectedOrder(null)
+          await onOrderUpdate?.()
+        }}
+      />
     </>
   )
 }

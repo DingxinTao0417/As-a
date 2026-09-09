@@ -21,6 +21,11 @@ export function Footer() {
             <h3 className="font-semibold text-sm">{t("روابط سريعة", "Quick Links")}</h3>
             <ul className="space-y-2 text-sm opacity-90">
               <li>
+                <Link href="/support" className="hover:text-primary transition-colors">
+                  {t("طلبات الدعم", "Support Tickets")}
+                </Link>
+              </li>
+              <li>
                 <Link href="/services/seeker" className="hover:text-primary transition-colors">
                   {t("تصفح الخدمات", "Browse Services")}
                 </Link>
@@ -50,6 +55,11 @@ export function Footer() {
             <h3 className="font-semibold text-sm">{t("الدعم", "Support")}</h3>
             <ul className="space-y-2 text-sm opacity-90">
               <li>
+                <Link href="/notifications" className="hover:text-primary transition-colors">
+                  {t("الإشعارات", "Notifications")}
+                </Link>
+              </li>
+              <li>
                 <Link href="/terms" className="hover:text-primary transition-colors">
                   {t("الشروط والأحكام", "Terms & Conditions")}
                 </Link>
@@ -64,9 +74,8 @@ export function Footer() {
         </div>
 
         <div className="border-t border-secondary-foreground/20 pt-4 mt-8 text-xs text-muted-foreground text-center space-y-1">
-          <p>{t("سجل تجاري رقم:", "CR No:")} XXXXXXXXXX</p>
-          <p>{t("الرقم الضريبي:", "VAT No:")} 3XXXXXXXXXXXXXXX</p>
-          <p>{t("البريد الإلكتروني:", "Email:")} support@asa.sa</p>
+          <p>{t("تتوفر طلبات تصدير البيانات وحذف الحساب من صفحة الملف الشخصي.", "Data export and account-deletion requests are available from the profile page.")}</p>
+          <p>{t("سيتم نشر بيانات الكيان وقناة التواصل الرسمية قبل الإطلاق العام.", "Legal entity details and an official contact channel will be published before public launch.")}</p>
         </div>
 
         <div className="mt-12 pt-8 border-t border-secondary-foreground/20 text-center text-sm opacity-75">

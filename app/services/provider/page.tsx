@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { useLanguage } from "@/components/language-provider"
 import {
-  CheckCircle2,
   TrendingUp,
   Users,
   DollarSign,
@@ -33,17 +32,17 @@ export default function ServiceProviderPage() {
   const benefits = [
     {
       icon: Users,
-      titleAr: "وصول لآلاف العملاء",
-      titleEn: "Access to Thousands of Clients",
-      descAr: "اعرض خدماتك لقاعدة واسعة من العملاء المحتملين في السعودية",
-      descEn: "Showcase your services to a wide base of potential clients in Saudi Arabia",
+      titleAr: "الوصول إلى السوق",
+      titleEn: "Marketplace Access",
+      descAr: "أنشئ خدمات يمكن للعملاء العثور عليها بعد مراجعتها ونشرها",
+      descEn: "Create services clients can find after review and publication",
     },
     {
       icon: DollarSign,
-      titleAr: "دخل إضافي مضمون",
-      titleEn: "Guaranteed Additional Income",
-      descAr: "حدد أسعارك بنفسك واحصل على دخل ثابت ومستقر",
-      descEn: "Set your own prices and earn stable, consistent income",
+      titleAr: "تسعير واضح",
+      titleEn: "Clear Pricing",
+      descAr: "حدد نوع السعر وقيمته قبل إرسال الخدمة للمراجعة",
+      descEn: "Set the pricing type and amount before submitting a service for review",
     },
     {
       icon: Calendar,
@@ -54,10 +53,10 @@ export default function ServiceProviderPage() {
     },
     {
       icon: Shield,
-      titleAr: "حماية قانونية",
-      titleEn: "Legal Protection",
-      descAr: "عقود محكمة وضمان حقوقك المالية",
-      descEn: "Secure contracts and guaranteed financial rights",
+      titleAr: "سجل عمل واضح",
+      titleEn: "Clear Work Record",
+      descAr: "تتبع الطلبات والتسليمات وطلبات التعديل في سجل واحد",
+      descEn: "Track orders, deliveries, and revision requests in one record",
     },
     {
       icon: Star,
@@ -101,25 +100,25 @@ export default function ServiceProviderPage() {
       number: "4",
       titleAr: "احصل على أرباحك",
       titleEn: "Get Paid",
-      descAr: "استلم أرباحك بعد إتمام المشاريع بنجاح",
-      descEn: "Receive your earnings after successful project completion",
+      descAr: "تابع الأرباح المكتملة وطلبات السحب من لوحة التحكم",
+      descEn: "Track completed earnings and withdrawal requests from the dashboard",
     },
   ]
 
   const features = [
     {
-      icon: CheckCircle2,
-      titleAr: "التحقق من الهوية",
-      titleEn: "Identity Verification",
-      descAr: "عملية توثيق سريعة وآمنة",
-      descEn: "Fast and secure verification process",
+      icon: Shield,
+      titleAr: "حالة توثيق صريحة",
+      titleEn: "Explicit Verification Status",
+      descAr: "تظهر الشارة فقط بعد قرار المراجعة من الإدارة",
+      descEn: "The badge appears only after an administrator review decision",
     },
     {
       icon: Clock,
-      titleAr: "دعم فني 24/7",
-      titleEn: "24/7 Technical Support",
-      descAr: "فريق دعم متاح لمساعدتك دائماً",
-      descEn: "Support team always available to help",
+      titleAr: "مساعد ثنائي اللغة",
+      titleEn: "Bilingual Assistant",
+      descAr: "إرشادات عامة بالعربية والإنجليزية مع توضيح حدود الخدمة",
+      descEn: "General Arabic and English guidance with clear service limits",
     },
     {
       icon: Briefcase,
@@ -127,60 +126,6 @@ export default function ServiceProviderPage() {
       titleEn: "Advanced Dashboard",
       descAr: "إدارة سهلة لخدماتك وطلباتك",
       descEn: "Easy management of your services and orders",
-    },
-  ]
-
-  const pricing = [
-    {
-      titleAr: "باقة البداية",
-      titleEn: "Starter Plan",
-      priceAr: "مجاناً",
-      priceEn: "Free",
-      featuresAr: ["عرض حتى 3 خدمات", "عمولة 15% على كل طلب", "دعم فني أساسي", "ملف شخصي عادي"],
-      featuresEn: ["Up to 3 services", "15% commission per order", "Basic technical support", "Standard profile"],
-    },
-    {
-      titleAr: "باقة المحترف",
-      titleEn: "Professional Plan",
-      priceAr: "99 ريال/شهرياً",
-      priceEn: "99 SAR/month",
-      featuresAr: [
-        "عرض حتى 10 خدمات",
-        "عمولة 10% على كل طلب",
-        "دعم فني متقدم",
-        "ملف شخصي مميز",
-        "ظهور أولوية في البحث",
-      ],
-      featuresEn: [
-        "Up to 10 services",
-        "10% commission per order",
-        "Advanced technical support",
-        "Premium profile",
-        "Priority in search results",
-      ],
-      popular: true,
-    },
-    {
-      titleAr: "باقة النخبة",
-      titleEn: "Elite Plan",
-      priceAr: "199 ريال/شهرياً",
-      priceEn: "199 SAR/month",
-      featuresAr: [
-        "خدمات غير محدودة",
-        "عمولة 5% على كل طلب",
-        "دعم فني مخصص",
-        "ملف شخصي VIP",
-        "أولوية قصوى في البحث",
-        "تحليلات متقدمة",
-      ],
-      featuresEn: [
-        "Unlimited services",
-        "5% commission per order",
-        "Dedicated technical support",
-        "VIP profile",
-        "Top priority in search",
-        "Advanced analytics",
-      ],
     },
   ]
 
@@ -198,8 +143,8 @@ export default function ServiceProviderPage() {
               </h1>
               <p className="text-lg md:text-xl text-muted-foreground text-balance">
                 {t(
-                  "حول خبراتك ومهاراتك إلى دخل ثابت. ابدأ رحلتك المهنية معنا اليوم",
-                  "Turn your expertise and skills into stable income. Start your professional journey with us today",
+                  "حوّل خبراتك ومهاراتك إلى خدمات واضحة يمكن للعملاء تصفحها وطلبها",
+                  "Turn your expertise into clear services that clients can browse and request",
                 )}
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
@@ -208,7 +153,7 @@ export default function ServiceProviderPage() {
                   <ArrowRight className="me-2 h-5 w-5" />
                 </Button>
                 <Button size="lg" variant="outline" className="text-lg px-8 bg-transparent" asChild>
-                  <Link href="#pricing">{t("تصفح الباقات", "View Plans")}</Link>
+                  <Link href="#how-it-works">{t("كيف تبدأ", "How It Works")}</Link>
                 </Button>
               </div>
             </div>
@@ -246,7 +191,7 @@ export default function ServiceProviderPage() {
         </section>
 
         {/* How It Works */}
-        <section className="py-16 md:py-24 bg-muted/30">
+        <section id="how-it-works" className="py-16 md:py-24 bg-muted/30">
           <div className="container mx-auto px-4">
             <div className="text-center mb-12">
               <h2 className="text-3xl md:text-4xl font-bold text-secondary mb-4">{t("كيف تبدأ؟", "How to Start?")}</h2>
@@ -297,51 +242,22 @@ export default function ServiceProviderPage() {
           </div>
         </section>
 
-        {/* Pricing Section */}
-        <section id="pricing" className="py-16 md:py-24 bg-muted/30">
+        {/* Plan availability */}
+        <section className="py-16 md:py-24 bg-muted/30">
           <div className="container mx-auto px-4">
-            <div className="text-center mb-12">
+            <div className="mx-auto max-w-3xl text-center">
               <h2 className="text-3xl md:text-4xl font-bold text-secondary mb-4">
-                {t("اختر الباقة المناسبة لك", "Choose Your Plan")}
+                {t("التسجيل متاح، والباقات المدفوعة غير مطروحة بعد", "Registration Is Available; Paid Plans Are Not Yet Offered")}
               </h2>
               <p className="text-muted-foreground text-lg">
-                {t("خطط مرنة تناسب جميع المستويات", "Flexible plans for all levels")}
+                {t(
+                  "يمكنك إنشاء ملف مقدم خدمة وإرسال خدماتك للمراجعة. أسعار الاشتراك وحدود الخدمات والعمولات المتدرجة ما زالت قيد اعتماد المنتج ولن يتم تحصيل رسوم اشتراك قبل نشرها وربط دورة دفع قابلة للتحقق.",
+                  "You can create a provider profile and submit services for review. Subscription prices, service limits, and tiered commissions are still under product review; no subscription fee will be charged before those rules and a verifiable payment lifecycle are published.",
+                )}
               </p>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl mx-auto">
-              {pricing.map((plan, index) => (
-                <Card key={index} className={`p-6 ${plan.popular ? "border-2 border-primary shadow-lg relative" : ""}`}>
-                  {plan.popular && (
-                    <div className="absolute top-0 right-1/2 translate-x-1/2 -translate-y-1/2">
-                      <span className="bg-primary text-primary-foreground px-4 py-1 rounded-full text-sm font-semibold">
-                        {t("الأكثر شعبية", "Most Popular")}
-                      </span>
-                    </div>
-                  )}
-                  <div className="space-y-6">
-                    <div className="text-center">
-                      <h3 className="text-2xl font-bold mb-2">{t(plan.titleAr, plan.titleEn)}</h3>
-                      <div className="text-3xl font-bold text-primary mb-4">{t(plan.priceAr, plan.priceEn)}</div>
-                    </div>
-                    <ul className="space-y-3">
-                      {plan.featuresAr.map((_, featureIndex) => (
-                        <li key={featureIndex} className="flex items-start gap-2">
-                          <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
-                          <span className="text-sm">
-                            {t(plan.featuresAr[featureIndex], plan.featuresEn[featureIndex])}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                    <Button
-                      className={`w-full ${plan.popular ? "bg-primary" : ""}`}
-                      variant={plan.popular ? "default" : "outline"}
-                    >
-                      {t("اختر هذه الباقة", "Choose This Plan")}
-                    </Button>
-                  </div>
-                </Card>
-              ))}
+              <Button className="mt-8" onClick={handleStartNow}>
+                {t("إنشاء ملف مقدم خدمة", "Create Provider Profile")}
+              </Button>
             </div>
           </div>
         </section>
@@ -358,7 +274,7 @@ export default function ServiceProviderPage() {
                 )}
               </p>
               <Button size="lg" className="bg-primary hover:bg-primary/90 text-lg px-8" onClick={handleStartNow}>
-                {t("سجل الآن مجاناً", "Register Free Now")}
+                {t("سجل الآن", "Register Now")}
                 <ArrowRight className="me-2 h-5 w-5" />
               </Button>
             </div>

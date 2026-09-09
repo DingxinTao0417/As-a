@@ -30,8 +30,13 @@ import {
   Trash2,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { exportUserData } from "@/app/actions/user-data"
-import { requestAccountDeletion } from "@/app/actions/delete-account"
+import {
+  cancelAccountDeletionRequest,
+  getAccountDeletionStatus,
+  requestAccountDeletion,
+  type AccountDeletionRequest,
+} from "@/app/actions/delete-account"
+import { saveProfileAvatar, saveProfileDetails } from "@/app/actions/profile"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -51,7 +56,6 @@ interface Profile {
   location?: string
   bio?: string
   avatar_url?: string
-  user_type?: "seeker" | "provider" | "both"
   role?: string
   created_at?: string
 }
@@ -61,6 +65,8 @@ export default function ProfilePage() {
   const router = useRouter()
   const { toast } = useToast()
   const [loading, setLoading] = useState(true)
+  const [profileLoadError, setProfileLoadError] = useState<string | null>(null)
+  const [profileLoadAttempt, setProfileLoadAttempt] = useState(0)
   const [saving, setSaving] = useState(false)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
@@ -74,7 +80,6 @@ export default function ProfilePage() {
     location: "",
     bio: "",
     avatar_url: "",
-    user_type: "seeker",
     role: "seeker",
   })
   const [editForm, setEditForm] = useState<Profile>({ ...profile })
@@ -87,51 +92,78 @@ export default function ProfilePage() {
   const [exportingData, setExportingData] = useState(false)
   const [deletingAccount, setDeletingAccount] = useState(false)
   const [showDeleteAccountDialog, setShowDeleteAccountDialog] = useState(false)
+  const [deletionRequest, setDeletionRequest] = useState<AccountDeletionRequest | null>(null)
+  const [deletionStatusUnavailable, setDeletionStatusUnavailable] = useState(false)
 
   useEffect(() => {
     const loadProfile = async () => {
+      setLoading(true)
+      setProfileLoadError(null)
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data: { user },error:authError } = await supabase.auth.getUser()
 
+      if (authError) {
+        setProfileLoadError(t("تعذر التحقق من الجلسة. يرجى المحاولة مرة أخرى","Could not verify your session. Please try again"))
+        setLoading(false)
+        return
+      }
       if (!user) {
         router.push("/auth/login")
         return
       }
 
-      const { data: profileData } = await supabase
+      const { data: profileData,error:profileError } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", user.id)
         .single()
+
+      if (profileError || !profileData) {
+        const message=t("تعذر تحميل ملفك الشخصي. يرجى المحاولة مرة أخرى","Could not load your profile. Please try again")
+        setProfileLoadError(message)
+        toast({ title:t("تعذر تحميل الملف الشخصي","Could not load profile"),description:message,variant:"destructive" })
+        setLoading(false)
+        return
+      }
 
       const merged: Profile = {
         id: user.id,
         full_name: profileData?.full_name || user.user_metadata?.full_name || "",
         email: user.email || "",
         phone: profileData?.phone || "",
-        // location & bio are stored in user_metadata (not in profiles table)
-        location: user.user_metadata?.location || "",
-        bio: user.user_metadata?.bio || "",
+        location: profileData.location || "",
+        bio: profileData.bio || "",
         avatar_url: profileData?.avatar_url || user.user_metadata?.avatar_url || "",
-        user_type: profileData?.user_type || user.user_metadata?.role || "seeker",
         role: profileData?.role || "seeker",
         created_at: profileData?.created_at,
       }
 
       setProfile(merged)
       setEditForm(merged)
+      const deletionResult = await getAccountDeletionStatus()
+      if (deletionResult.success) {
+        setDeletionRequest(deletionResult.data.request)
+        setDeletionStatusUnavailable(false)
+      } else {
+        setDeletionStatusUnavailable(true)
+        toast({ title: t("تعذر تحميل حالة طلب الحذف", "Could not load deletion request status"), description: deletionResult.error, variant: "destructive" })
+      }
       setLoading(false)
     }
 
     loadProfile()
-  }, [router])
+  }, [router,profileLoadAttempt])
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    // Validate type
-    if (!file.type.startsWith("image/")) {
+    const extensions: Record<string, string> = {
+      "image/jpeg": "jpg",
+      "image/png": "png",
+      "image/webp": "webp",
+    }
+    if (!extensions[file.type]) {
       toast({
         title: t("خطأ", "Error"),
         description: t("يرجى اختيار صورة فقط", "Please select an image file"),
@@ -158,18 +190,11 @@ export default function ProfilePage() {
     try {
       const supabase = createClient()
 
-      // Proactively remove all possible old avatar filenames (remove() is a no-op for non-existent files)
-      const possibleOldPaths = ["avatar", "avatar.jpg", "avatar.jpeg", "avatar.png", "avatar.webp", "avatar.gif"].map(
-        (name) => `${profile.id}/${name}`
-      )
-      await supabase.storage.from("avatars").remove(possibleOldPaths)
-
-      // Fixed filename per user — upsert as safety net
-      const filePath = `${profile.id}/avatar`
+      const filePath = `${profile.id}/${crypto.randomUUID()}.${extensions[file.type]}`
 
       const { error: uploadError } = await supabase.storage
         .from("avatars")
-        .upload(filePath, file, { upsert: true, contentType: file.type })
+        .upload(filePath, file, { upsert: false, contentType: file.type })
 
       if (uploadError) throw uploadError
 
@@ -177,34 +202,34 @@ export default function ProfilePage() {
         .from("avatars")
         .getPublicUrl(filePath)
 
-      // Cache-busting so the browser doesn't show old avatar
-      const urlWithBust = `${publicUrl}?t=${Date.now()}`
-
-      // Update profiles table
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .update({ avatar_url: urlWithBust })
-        .eq("id", profile.id)
-
-      if (profileError) throw profileError
-
-      // Also update providers table if the user has a provider profile
-      // (service pages read avatar_url from providers, not profiles)
-      const { error: providerError } = await supabase
-        .from("providers")
-        .update({ avatar_url: urlWithBust })
-        .eq("user_id", profile.id)
-        .select("id")
-
-      if (providerError) {
-        // provider avatar update failed silently
+      const saveResult = await saveProfileAvatar(publicUrl)
+      if (!saveResult.success) {
+        await supabase.storage.from("avatars").remove([filePath])
+        throw new Error(saveResult.error)
       }
 
-      setProfile((prev) => ({ ...prev, avatar_url: urlWithBust }))
+      const marker = "/storage/v1/object/public/avatars/"
+      const oldPaths = saveResult.data.oldUrls.flatMap((url) => {
+        try {
+          const pathname = new URL(url).pathname
+          const index = pathname.indexOf(marker)
+          return index >= 0 ? [decodeURIComponent(pathname.slice(index + marker.length))] : []
+        } catch {
+          return []
+        }
+      })
+      const { error: cleanupError } = oldPaths.length
+        ? await supabase.storage.from("avatars").remove(oldPaths)
+        : { error: null }
+
+      setProfile((prev) => ({ ...prev, avatar_url: publicUrl }))
       setAvatarPreview(null)
       toast({
         title: t("تم تحديث الصورة", "Avatar updated"),
-        description: t("تم رفع صورتك الشخصية بنجاح", "Your profile photo has been uploaded"),
+        description: cleanupError
+          ? t("تم حفظ الصورة الجديدة، وتعذر تنظيف الملف القديم", "The new avatar was saved, but the old file could not be cleaned up")
+          : t("تم رفع صورتك الشخصية بنجاح", "Your profile photo has been uploaded"),
+        variant: cleanupError ? "destructive" : "default",
       })
     } catch (error: any) {
       setAvatarPreview(null)
@@ -214,6 +239,7 @@ export default function ProfilePage() {
         variant: "destructive",
       })
     } finally {
+      URL.revokeObjectURL(previewUrl)
       setUploadingAvatar(false)
       // Reset input so same file can be re-selected
       if (fileInputRef.current) fileInputRef.current.value = ""
@@ -223,32 +249,21 @@ export default function ProfilePage() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      const supabase = createClient()
-
-      // Save columns that exist in profiles table
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .upsert({
-          id: profile.id,
-          email: profile.email,
-          full_name: editForm.full_name,
-          phone: editForm.phone,
-          updated_at: new Date().toISOString(),
-        })
-
-      if (profileError) throw profileError
-
-      // Save location & bio to auth user_metadata (not in profiles table)
-      const { error: metaError } = await supabase.auth.updateUser({
-        data: {
-          location: editForm.location,
-          bio: editForm.bio,
-        },
+      const result=await saveProfileDetails({
+        fullName:editForm.full_name,
+        phone:editForm.phone || "",
+        location:editForm.location || "",
+        bio:editForm.bio || "",
       })
-
-      if (metaError) throw metaError
-
-      setProfile({ ...profile, ...editForm })
+      if(!result.success)throw new Error(result.error)
+      const saved=result.data.profile
+      setProfile((current)=>({
+        ...current,
+        full_name:String(saved.full_name||""),
+        phone:String(saved.phone||""),
+        location:String(saved.location||""),
+        bio:String(saved.bio||""),
+      }))
       setDialogOpen(false)
       toast({
         title: t("تم الحفظ بنجاح", "Saved successfully"),
@@ -282,10 +297,10 @@ export default function ProfilePage() {
       })
       return
     }
-    if (passwordForm.new_password.length < 6) {
+    if (passwordForm.new_password.length < 8) {
       toast({
         title: t("خطأ", "Error"),
-        description: t("كلمة المرور يجب أن تكون 6 أحرف على الأقل", "Password must be at least 6 characters"),
+        description: t("كلمة المرور يجب أن تكون 8 أحرف على الأقل", "Password must be at least 8 characters"),
         variant: "destructive",
       })
       return
@@ -294,6 +309,14 @@ export default function ProfilePage() {
     setChangingPassword(true)
     try {
       const supabase = createClient()
+
+      const { error: reauthenticationError } = await supabase.auth.signInWithPassword({
+        email: profile.email,
+        password: passwordForm.current_password,
+      })
+      if (reauthenticationError) {
+        throw new Error(t("كلمة المرور الحالية غير صحيحة", "Current password is incorrect"))
+      }
 
       const { error } = await supabase.auth.updateUser({
         password: passwordForm.new_password,
@@ -320,14 +343,16 @@ export default function ProfilePage() {
   const handleExportData = async () => {
     setExportingData(true)
     try {
-      const result = await exportUserData()
-      if (!result.success) throw new Error(result.error)
-
-      const blob = new Blob([JSON.stringify(result.data, null, 2)], { type: "application/json" })
+      const response=await fetch("/api/user-data-export",{method:"GET",headers:{Accept:"application/gzip"}})
+      if(!response.ok){
+        const failure=await response.json().catch(()=>null) as {error?:string}|null
+        throw new Error(failure?.error||t("تعذر تصدير بياناتك","Unable to export your data"))
+      }
+      const blob=await response.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = `asaa-user-data-${profile.id}-${new Date().toISOString().slice(0, 10)}.json`
+      a.download = `asaa-user-data-${profile.id}-${new Date().toISOString().slice(0, 10)}.tar.gz`
       document.body.appendChild(a)
       a.click()
       a.remove()
@@ -335,7 +360,7 @@ export default function ProfilePage() {
 
       toast({
         title: t("تم تجهيز البيانات", "Data exported"),
-        description: t("تم تنزيل نسخة من بياناتك", "A copy of your data has been downloaded"),
+        description:t("تم تنزيل أرشيف يحتوي على JSON والملفات الخاصة المتاحة","An archive containing JSON and available private files was downloaded"),
       })
     } catch (error: any) {
       toast({
@@ -358,11 +383,11 @@ export default function ProfilePage() {
     try {
       const result = await requestAccountDeletion()
       if (!result.success) throw new Error(result.error)
+      setDeletionRequest(result.data.request)
       toast({
         title: t("تم إرسال طلب الحذف", "Deletion requested"),
-        description: t("تم تسجيل خروجك بعد طلب حذف الحساب", "You have been signed out after requesting account deletion"),
+        description: t("سيبقى الطلب قابلاً للإلغاء حتى تبدأ المعالجة", "The request remains cancellable until processing begins"),
       })
-      router.push("/")
     } catch (error: any) {
       toast({
         title: t("تعذر حذف الحساب", "Account deletion failed"),
@@ -374,12 +399,21 @@ export default function ProfilePage() {
     }
   }
 
-  const roleLabel =
-    profile.user_type === "provider"
-      ? t("مقدم خدمات", "Service Provider")
-      : profile.user_type === "both"
-      ? t("مقدم خدمات وباحث", "Provider & Seeker")
-      : t("باحث عن خدمات", "Service Seeker")
+  const handleCancelDeletion = async () => {
+    setDeletingAccount(true)
+    const result = await cancelAccountDeletionRequest()
+    if (result.success) {
+      setDeletionRequest(result.data.request)
+      toast({ title: t("تم إلغاء طلب الحذف", "Deletion request cancelled") })
+    } else {
+      toast({ title: t("تعذر إلغاء الطلب", "Could not cancel deletion request"), description: result.error, variant: "destructive" })
+    }
+    setDeletingAccount(false)
+  }
+
+  const roleLabel = profile.role === "provider"
+    ? t("مقدم خدمات", "Service Provider")
+    : t("باحث عن خدمات", "Service Seeker")
 
   const joinedYear = profile.created_at
     ? new Date(profile.created_at).getFullYear()
@@ -389,6 +423,25 @@ export default function ProfilePage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary" />
+      </div>
+    )
+  }
+
+  if (profileLoadError) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header />
+        <main className="flex-1 flex items-center justify-center bg-muted/30 px-4">
+          <div className="max-w-md text-center" role="alert">
+            <User className="mx-auto mb-4 h-12 w-12 text-destructive" />
+            <h1 className="text-xl font-semibold">{t("تعذر تحميل الملف الشخصي","Could not load profile")}</h1>
+            <p className="mt-2 text-sm text-muted-foreground">{profileLoadError}</p>
+            <Button className="mt-4" onClick={() => setProfileLoadAttempt((attempt) => attempt + 1)}>
+              {t("إعادة المحاولة","Retry")}
+            </Button>
+          </div>
+        </main>
+        <Footer />
       </div>
     )
   }
@@ -555,6 +608,7 @@ export default function ProfilePage() {
                           <Input
                             id="current_password"
                             type="password"
+                            autoComplete="current-password"
                             value={passwordForm.current_password}
                             onChange={(e) => setPasswordForm({ ...passwordForm, current_password: e.target.value })}
                             placeholder={t("أدخل كلمة المرور الحالية", "Enter current password")}
@@ -565,6 +619,9 @@ export default function ProfilePage() {
                           <Input
                             id="new_password"
                             type="password"
+                            autoComplete="new-password"
+                            minLength={8}
+                            maxLength={128}
                             value={passwordForm.new_password}
                             onChange={(e) => setPasswordForm({ ...passwordForm, new_password: e.target.value })}
                           />
@@ -574,6 +631,9 @@ export default function ProfilePage() {
                           <Input
                             id="confirm_password"
                             type="password"
+                            autoComplete="new-password"
+                            minLength={8}
+                            maxLength={128}
                             value={passwordForm.confirm_password}
                             onChange={(e) => setPasswordForm({ ...passwordForm, confirm_password: e.target.value })}
                           />
@@ -660,7 +720,7 @@ export default function ProfilePage() {
                     <MessageCircle className="h-5 w-5 mx-auto mb-1 text-primary" />
                     <p className="text-xs text-muted-foreground">{t("النوع", "Type")}</p>
                     <p className="text-xs font-semibold mt-0.5">
-                      {profile.user_type === "provider"
+                      {profile.role === "provider"
                         ? t("مقدم", "Provider")
                         : t("باحث", "Seeker")}
                     </p>
@@ -777,15 +837,38 @@ export default function ProfilePage() {
                     "Download a copy of your data or request account deletion under the privacy policy."
                   )}
                 </p>
+                {deletionRequest?.status === "requested" && (
+                  <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
+                    {t("طلب حذف الحساب قيد الانتظار ويمكن إلغاؤه قبل بدء المعالجة.", "Your account deletion request is pending and can be cancelled before processing begins.")}
+                  </div>
+                )}
+                {deletionRequest?.status === "processing" && (
+                  <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
+                    {t("بدأت معالجة طلب حذف الحساب ولم يعد قابلاً للإلغاء من هذه الصفحة.", "Account deletion processing has started and can no longer be cancelled from this page.")}
+                  </div>
+                )}
+                {deletionStatusUnavailable && (
+                  <div role="alert" className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                    {t("حالة طلب الحذف غير متاحة. أعد تحميل الصفحة قبل إرسال طلب جديد.", "Deletion request status is unavailable. Reload the page before submitting a new request.")}
+                  </div>
+                )}
                 <div className="flex flex-col sm:flex-row gap-2">
                   <Button variant="outline" onClick={handleExportData} disabled={exportingData} className="gap-2">
                     <Download className="h-4 w-4" />
                     {exportingData ? t("جاري التصدير...", "Exporting...") : t("تصدير بياناتي", "Export My Data")}
                   </Button>
-                  <Button variant="destructive" onClick={handleRequestDeletion} disabled={deletingAccount} className="gap-2">
-                    <Trash2 className="h-4 w-4" />
-                    {deletingAccount ? t("جاري المعالجة...", "Processing...") : t("حذف حسابي", "Delete My Account")}
-                  </Button>
+                  {deletionRequest?.status === "requested" ? (
+                    <Button variant="outline" onClick={() => void handleCancelDeletion()} disabled={deletingAccount}>
+                      {deletingAccount ? t("جاري الإلغاء...", "Cancelling...") : t("إلغاء طلب الحذف", "Cancel Deletion Request")}
+                    </Button>
+                  ) : deletionRequest?.status === "processing" ? (
+                    <Button variant="outline" disabled>{t("جاري معالجة الحذف", "Deletion Processing")}</Button>
+                  ) : (
+                    <Button variant="destructive" onClick={handleRequestDeletion} disabled={deletingAccount || deletionStatusUnavailable} className="gap-2">
+                      <Trash2 className="h-4 w-4" />
+                      {deletingAccount ? t("جاري المعالجة...", "Processing...") : t("طلب حذف حسابي", "Request Account Deletion")}
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>
@@ -796,18 +879,18 @@ export default function ProfilePage() {
       <AlertDialog open={showDeleteAccountDialog} onOpenChange={setShowDeleteAccountDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t("حذف الحساب", "Delete Account")}</AlertDialogTitle>
+            <AlertDialogTitle>{t("طلب حذف الحساب", "Request Account Deletion")}</AlertDialogTitle>
             <AlertDialogDescription>
               {t(
-                "هل أنت متأكد من طلب حذف حسابك؟ سيتم تسجيل خروجك وقد لا يمكن التراجع بعد معالجة الطلب.",
-                "Are you sure you want to request account deletion? You will be signed out and the request may not be reversible once processed."
+                "هل تريد إرسال طلب حذف الحساب؟ يمكنك إلغاء الطلب قبل بدء المعالجة. لن يتم حذف البيانات أو تعطيل الحساب بمجرد إرسال الطلب.",
+                "Submit an account deletion request? You can cancel it before processing begins. Submitting the request does not immediately delete data or disable the account."
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("إلغاء", "Cancel")}</AlertDialogCancel>
             <AlertDialogAction onClick={executeDeleteAccount} className="bg-destructive text-destructive-foreground">
-              {t("حذف حسابي", "Delete My Account")}
+              {t("إرسال الطلب", "Submit Request")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

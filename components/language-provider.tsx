@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useState, useEffect } from "react"
+import { createContext, useCallback, useContext, useState, useEffect } from "react"
 
 type Language = "ar" | "en"
 
@@ -32,9 +32,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     html.dir = language === "ar" ? "rtl" : "ltr"
   }, [language])
 
-  const t = (ar: string, en: string) => {
-    return language === "ar" ? ar : en
-  }
+  const t = useCallback((ar: string, en: string) => language === "ar" ? ar : en, [language])
 
   const isRTL = language === "ar"
 

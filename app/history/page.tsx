@@ -3,14 +3,13 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useLanguage } from "@/components/language-provider"
-import { createClient } from "@/lib/supabase/client"
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
-import { History, Calendar, DollarSign, Star, Edit, Trash2, ExternalLink } from "lucide-react"
+import { History, Calendar, DollarSign, Star, Edit, Trash2, ExternalLink, Undo2 } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import {
@@ -23,6 +22,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { deleteOrderReview, saveOrderReview } from "@/app/actions/reviews"
+import { getMyOrders } from "@/app/actions/history"
 
 interface Review {
   id: string
@@ -34,7 +35,8 @@ interface Review {
 interface OrderHistory {
   id: string
   service_id: string | null
-  provider_name: string
+  provider_name_ar: string
+  provider_name_en: string
   provider_avatar: string
   service_name_ar: string
   service_name_en: string
@@ -51,7 +53,10 @@ export default function HistoryPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [history, setHistory] = useState<OrderHistory[]>([])
-  const [user, setUser] = useState<any>(null)
+  const [historyPage, setHistoryPage] = useState(1)
+  const [historyTotal, setHistoryTotal] = useState(0)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   // Review state
   const [reviewDialog, setReviewDialog] = useState<{ isOpen: boolean, order: OrderHistory | null }>({ isOpen: false, order: null })
@@ -62,63 +67,30 @@ export default function HistoryPage() {
   const [deleteReviewId, setDeleteReviewId] = useState<string | null>(null)
   const { toast } = useToast()
 
-  const loadHistory = async () => {
-    setLoading(true)
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
-      router.push("/auth/login")
-      return
-    }
-
-    setUser(user)
-
-    // Fetch confirmed/paid orders for this seeker
-    const { data: ordersData, error: ordersError } = await supabase
-      .from("orders")
-      .select(`*, providers(name_ar, name_en, avatar_url)`)
-      .eq("seeker_id", user.id)
-      .in("status", ["completed", "paid"])
-      .order("created_at", { ascending: false })
-
-    if (ordersError) {
-      // silently ignore
-    }
-
-    // Fetch all reviews by this seeker
-    const { data: reviewsData } = await supabase
-      .from("reviews")
-      .select("*")
-      .eq("reviewer_id", user.id)
-
-    const reviewMap: Record<string, Review> = {}
-    reviewsData?.forEach((r: any) => {
-      if (r.order_id) reviewMap[r.order_id] = r
-    })
-
-    const formattedHistory = ordersData?.map((item: any) => {
-      // Supabase nested relation check
-      const provider = Array.isArray(item.providers) ? item.providers[0] : item.providers
-
-      return {
-        id: item.id,
-        service_id: item.service_id,
-        provider_name: language === "ar" ? provider?.name_ar : provider?.name_en,
-        provider_avatar: provider?.avatar_url,
-        service_name_ar: item.service_name_ar,
-        service_name_en: item.service_name_en,
-        service_description_ar: item.service_description_ar,
-        service_description_en: item.service_description_en,
-        amount: item.amount,
-        status: item.status,
-        completed_at: item.completed_at || item.paid_at || item.created_at,
-        review: reviewMap[item.id],
+  const loadHistory = async (reset = true) => {
+    const nextPage = reset ? 1 : historyPage + 1
+    if (reset) setLoading(true)
+    else setLoadingMore(true)
+    try {
+      const result = await getMyOrders(nextPage)
+      if (!result.success) {
+        if (reset) setLoadError(result.error)
+        toast({ title: t("تعذر تحميل الطلبات", "Could not load orders"), description: result.error, variant: "destructive" })
+        return
       }
-    })
-
-    setHistory(formattedHistory || [])
-    setLoading(false)
+      const orders = result.data.orders as OrderHistory[]
+      setHistory((current) => reset ? orders : [...current, ...orders])
+      setHistoryPage(nextPage)
+      setHistoryTotal(result.data.total)
+      if (reset) setLoadError(null)
+    } catch {
+      const message=t("يرجى المحاولة مرة أخرى", "Please try again")
+      if (reset) setLoadError(message)
+      toast({ title: t("تعذر تحميل الطلبات", "Could not load orders"), description:message, variant: "destructive" })
+    } finally {
+      setLoading(false)
+      setLoadingMore(false)
+    }
   }
 
   useEffect(() => {
@@ -142,50 +114,50 @@ export default function HistoryPage() {
 
   const executeDeleteReview = async () => {
     if (!deleteReviewId) return
-    const supabase = createClient()
-    await supabase.from("reviews").delete().eq("id", deleteReviewId)
-    setDeleteReviewId(null)
-    loadHistory()
+    try {
+      const result = await deleteOrderReview(deleteReviewId)
+      if (!result.success) {
+        toast({ title: t("فشل حذف التقييم", "Review deletion failed"), description: result.error, variant: "destructive" })
+        return
+      }
+      setDeleteReviewId(null)
+      await loadHistory()
+    } catch {
+      toast({ title: t("فشل حذف التقييم", "Review deletion failed"), description: t("يرجى المحاولة مرة أخرى", "Please try again"), variant: "destructive" })
+    }
   }
 
   const handleSaveReview = async () => {
-    if (!reviewDialog.order || !user) return
+    if (!reviewDialog.order) return
     setSubmittingReview(true)
 
-    const supabase = createClient()
     const order = reviewDialog.order
-
-    if (order.review) {
-      // Update
-      const { error } = await supabase.from("reviews").update({
-        rating,
-        comment,
-      }).eq("id", order.review.id)
-      if (error) {
-        toast({ title: t("خطأ", "Error"), description: t("فشل في حفظ التقييم", "Failed to save review"), variant: "destructive" })
-        setSubmittingReview(false)
+    try {
+      const result = await saveOrderReview(order.id, rating, comment)
+      if (!result.success) {
+        toast({ title: t("فشل في حفظ التقييم", "Failed to save review"), description: result.error, variant: "destructive" })
         return
       }
-    } else {
-      // Insert
-      const { error } = await supabase.from("reviews").insert({
-        order_id: order.id,
-        service_id: order.service_id,
-        reviewer_id: user.id,
-        rating,
-        comment,
-        service_name: language === "ar" ? order.service_name_ar : order.service_name_en,
-      })
-      if (error) {
-        toast({ title: t("خطأ", "Error"), description: t("فشل في حفظ التقييم", "Failed to save review"), variant: "destructive" })
-        setSubmittingReview(false)
-        return
-      }
+      setReviewDialog({ isOpen: false, order: null })
+      await loadHistory()
+    } catch {
+      toast({ title: t("فشل في حفظ التقييم", "Failed to save review"), description: t("يرجى المحاولة مرة أخرى", "Please try again"), variant: "destructive" })
+    } finally {
+      setSubmittingReview(false)
     }
+  }
 
-    setSubmittingReview(false)
-    setReviewDialog({ isOpen: false, order: null })
-    loadHistory() // refresh
+  const orderStatus = (status: string) => {
+    switch (status) {
+      case "pending": return t("بانتظار الدفع", "Pending Payment")
+      case "paid": return t("قيد التنفيذ", "In Progress")
+      case "awaiting_confirmation": return t("بانتظار تأكيد الاستلام", "Awaiting Approval")
+      case "revision_requested": return t("تعديل مطلوب", "Revision Requested")
+      case "completed": return t("مكتمل", "Completed")
+      case "cancelled": return t("ملغي", "Cancelled")
+      case "refunded": return t("مسترد", "Refunded")
+      default: return status
+    }
   }
 
   if (loading) {
@@ -205,19 +177,30 @@ export default function HistoryPage() {
           <div className="mb-6">
             <h1 className="text-3xl font-bold flex items-center gap-2">
               <History className="h-8 w-8" />
-              {t("سجل الخدمات", "Service History")}
+              {t("طلباتي", "My Orders")}
             </h1>
             <p className="text-muted-foreground mt-2">
-              {t("عرض جميع الخدمات التي أنجزتها", "View all services you've completed")}
+              {t("تابع جميع طلباتك من الدفع حتى التقييم", "Track every order from payment through review")}
             </p>
           </div>
 
-          {history.length === 0 ? (
+          {loadError ? (
+            <Card>
+              <CardContent className="py-12 text-center" role="alert">
+                <History className="h-12 w-12 mx-auto text-destructive mb-4" />
+                <p className="text-lg font-medium">{t("تعذر تحميل الطلبات", "Could not load orders")}</p>
+                <p className="mt-2 text-sm text-muted-foreground">{loadError}</p>
+                <Button variant="outline" className="mt-4" onClick={() => void loadHistory()}>
+                  {t("إعادة المحاولة", "Retry")}
+                </Button>
+              </CardContent>
+            </Card>
+          ) : history.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center">
                 <History className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <p className="text-lg text-muted-foreground">
-                  {t("لا يوجد سجل خدمات حتى الآن", "No service history yet")}
+                  {t("لا توجد طلبات حتى الآن", "No orders yet")}
                 </p>
               </CardContent>
             </Card>
@@ -229,7 +212,7 @@ export default function HistoryPage() {
                     <div className="flex flex-col md:flex-row gap-4 items-start">
                       <Avatar className="h-12 w-12">
                         <AvatarImage src={item.provider_avatar || "/placeholder.svg"} />
-                        <AvatarFallback>{item.provider_name?.charAt(0)}</AvatarFallback>
+                        <AvatarFallback>{(language === "ar" ? item.provider_name_ar : item.provider_name_en)?.charAt(0)}</AvatarFallback>
                       </Avatar>
                       <div className="flex-1 w-full">
                         <div className="flex flex-col md:flex-row md:items-start justify-between mb-2 gap-2">
@@ -241,10 +224,10 @@ export default function HistoryPage() {
                               {language === "ar" ? item.service_name_ar : item.service_name_en}
                               {item.service_id && <ExternalLink className="h-4 w-4 text-muted-foreground" />}
                             </h3>
-                            <p className="text-sm text-muted-foreground">{item.provider_name}</p>
+                            <p className="text-sm text-muted-foreground">{language === "ar" ? item.provider_name_ar : item.provider_name_en}</p>
                           </div>
                           <Badge variant={item.status === "completed" ? "default" : "secondary"}>
-                            {item.status === "completed" ? t("مكتمل", "Completed") : t("مدفوع", "Paid")}
+                            {orderStatus(item.status)}
                           </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground mb-4">
@@ -263,26 +246,33 @@ export default function HistoryPage() {
                             </div>
                           </div>
 
-                          {/* Review Actions */}
                           <div className="flex items-center gap-2">
-                            {!item.review ? (
-                              <Button size="sm" variant="outline" className="gap-2" onClick={() => openReviewDialog(item)}>
-                                <Star className="h-4 w-4" />
-                                {t("أضف تقييماً", "Write Review")}
+                            {["paid", "revision_requested", "awaiting_confirmation", "completed"].includes(item.status) && (
+                              <Button size="sm" variant="outline" className="gap-2" onClick={() => router.push(`/refunds?order=${item.id}`)}>
+                                <Undo2 className="h-4 w-4" />
+                                {t("طلب استرداد", "Request Refund")}
                               </Button>
-                            ) : (
-                              <>
-                                <div className="flex items-center bg-muted px-3 py-1.5 rounded-full text-xs font-medium me-2">
-                                  <Star className="h-3 w-3 fill-yellow-400 text-yellow-400 me-1" />
-                                  {item.review.rating}/5
-                                </div>
-                                <Button size="sm" variant="ghost" onClick={() => openReviewDialog(item)}>
-                                  <Edit className="h-4 w-4" />
+                            )}
+                            {item.status === "completed" && (
+                              !item.review ? (
+                                <Button size="sm" variant="outline" className="gap-2" onClick={() => openReviewDialog(item)}>
+                                  <Star className="h-4 w-4" />
+                                  {t("أضف تقييماً", "Write Review")}
                                 </Button>
-                                <Button size="sm" variant="ghost" className="text-destructive" onClick={() => handleDeleteReview(item.review!.id)}>
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </>
+                              ) : (
+                                <>
+                                  <div className="flex items-center bg-muted px-3 py-1.5 rounded-full text-xs font-medium me-2">
+                                    <Star className="h-3 w-3 fill-yellow-400 text-yellow-400 me-1" />
+                                    {item.review.rating}/5
+                                  </div>
+                                  <Button size="sm" variant="ghost" onClick={() => openReviewDialog(item)}>
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                  <Button size="sm" variant="ghost" className="text-destructive" onClick={() => handleDeleteReview(item.review!.id)}>
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </>
+                              )
                             )}
                           </div>
                         </div>
@@ -292,6 +282,13 @@ export default function HistoryPage() {
                   </CardContent>
                 </Card>
               ))}
+              {history.length < historyTotal && (
+                <div className="flex justify-center pt-4">
+                  <Button variant="outline" onClick={() => loadHistory(false)} disabled={loadingMore}>
+                    {loadingMore ? t("جاري التحميل...", "Loading...") : t("تحميل طلبات أقدم", "Load Older Orders")}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -332,6 +329,7 @@ export default function HistoryPage() {
                 onChange={(e) => setComment(e.target.value)}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
                 rows={4}
+                maxLength={5000}
               />
             </div>
           </div>
